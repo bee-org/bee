@@ -22,6 +22,11 @@ type LNBCodec struct {
 }
 
 func (c LNBCodec) Encode(name string, body interface{}) (data []byte, err error) {
+	//var bodyBytes []byte
+	//switch body.(type) {
+	//case uint, uint8, uint16, uint32, uint64, int, int8, int16, int32, int64, string, bool, complex64,complex128:
+	//	bodyBytes =
+	//}
 	bs, err := json.Marshal(body)
 	if err != nil {
 		return nil, err

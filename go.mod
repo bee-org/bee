@@ -3,7 +3,7 @@ module github.com/fanjindong/bee
 go 1.15
 
 require (
-	github.com/apache/rocketmq-client-go/v2 v2.1.0 // indirect
+	github.com/apache/rocketmq-client-go/v2 v2.1.0
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect

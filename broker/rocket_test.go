@@ -12,7 +12,7 @@ var broker IBroker
 
 func initRocketMQBroker() {
 	b, err := NewRocketMQBroker(RocketMQConfig{
-		Hosts:             []string{"http://rmq1te.test.srv.mc.dd:9876"},
+		Hosts:             []string{"http://rmq.test:9876"},
 		Topic:             "BEE",
 		ProducerGroupName: "BEE-producer",
 		ConsumerGroupName: "BEE-consumer",

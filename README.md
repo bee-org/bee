@@ -18,7 +18,7 @@ func printHandler(c *bee.Context) error {
 
 func main(){
     b, err := bee.NewRocketMQBroker(RocketMQConfig{
-        Hosts:             []string{"http://rmq1te.test.srv.mc.dd:9876"},
+        Hosts:             []string{"http://rmq.test:9876"},
         Topic:             "BEE",
         ProducerGroupName: "BEE-producer",
         ConsumerGroupName: "BEE-consumer",

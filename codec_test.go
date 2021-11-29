@@ -10,7 +10,7 @@ func TestLNBCodec(t *testing.T) {
 	c := LNBCodec{}
 	name := "func1"
 	body := map[string]string{"foo": "bar"}
-	data, err := c.Encode(name, body)
+	data, err := c.Encode(name, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -20,7 +20,7 @@ func TestLNBCodec(t *testing.T) {
 	}
 	gotM := make(map[string]string)
 	if err := json.Unmarshal(gotBody, &gotM); err != nil {
-		t.Error(err)
+		t.Error(gotBody, err)
 	}
 	if !reflect.DeepEqual(gotM, body) {
 		t.Error(body, gotM)

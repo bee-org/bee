@@ -22,22 +22,26 @@ type LNBCodec struct {
 }
 
 func (c LNBCodec) Encode(name string, body interface{}) (data []byte, err error) {
-	//var bodyBytes []byte
+	var bodyBytes []byte
 	//switch body.(type) {
 	//case uint, uint8, uint16, uint32, uint64, int, int8, int16, int32, int64, string, bool, complex64,complex128:
 	//	bodyBytes =
 	//}
-	bs, err := json.Marshal(body)
+	if body != nil {
+		bodyBytes, err = json.Marshal(body)
+	}
 	if err != nil {
 		return nil, err
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, len(bs)+len(name)+1))
+	buf := bytes.NewBuffer(make([]byte, 0, len(bodyBytes)+len(name)+1))
 	//if err := binary.Write(buf, binary.BigEndian, uint8(len(name))); err != nil {
 	//	return nil, err
 	//}
 	buf.WriteByte(byte(uint8(len(name))))
 	buf.WriteString(name)
-	buf.Write(bs)
+	if len(bodyBytes) > 0 {
+		buf.Write(bodyBytes)
+	}
 	return buf.Bytes(), nil
 }
 

@@ -85,7 +85,7 @@ func (b *RocketMQBroker) Start() error {
 }
 
 func (b *RocketMQBroker) Close() error {
-	_ = b.producer.Shutdown()
+	// consumer or producer only shutdown once.
 	return b.consumer.Shutdown()
 }
 

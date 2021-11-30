@@ -1,4 +1,4 @@
-package bee
+package codec
 
 import (
 	"encoding/json"

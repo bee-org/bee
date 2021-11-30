@@ -8,11 +8,12 @@ import (
 
 type Context struct {
 	ctx  context.Context
+	Name string
 	Body []byte
 }
 
-func NewContext(ctx context.Context, body []byte) *Context {
-	return &Context{ctx: ctx, Body: body}
+func NewContext(ctx context.Context, name string, body []byte) *Context {
+	return &Context{ctx: ctx, Name: name, Body: body}
 }
 
 func (c *Context) Parse(v interface{}) error {

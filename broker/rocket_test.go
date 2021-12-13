@@ -74,7 +74,7 @@ func TestRocketMQBroker_Send(t *testing.T) {
 	//broker.Send(context.TODO(), "print", 5)
 	//time.Sleep(1 * time.Second)
 	//broker.Send(context.TODO(), "print", 6)
-	time.Sleep(1 * time.Second)
+	time.Sleep(3 * time.Second)
 }
 
 func TestRocketMQBroker_Close(t *testing.T) {

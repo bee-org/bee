@@ -23,32 +23,39 @@ type RocketMQConfig struct {
 }
 
 func NewRocketMQBroker(config RocketMQConfig) (IBroker, error) {
-	c, err := rocketmq.NewPushConsumer(
-		consumer.WithNameServer(config.Hosts),
-		consumer.WithGroupName(config.ConsumerGroupName),
-		consumer.WithConsumerOrder(config.Order),
-		consumer.WithConsumerModel(func() consumer.MessageModel {
-			if config.BroadCasting {
-				return consumer.BroadCasting
-			}
-			return consumer.Clustering
-		}()),
-		consumer.WithConsumeMessageBatchMaxSize(1),
-		consumer.WithConsumeFromWhere(consumer.ConsumeFromLastOffset))
-	if err != nil {
-		return nil, err
-	}
-	p, err := rocketmq.NewProducer(
-		producer.WithNameServer(config.Hosts),
-		producer.WithRetry(3),
-		producer.WithGroupName(config.ProducerGroupName),
-	)
-	b := &RocketMQBroker{producer: p, consumer: c, codec: &codec.LNBCodec{}, topic: config.Topic, router: map[string]bee.Handler{}}
+	b := &RocketMQBroker{codec: &codec.LNBCodec{}, topic: config.Topic, router: map[string]bee.Handler{}}
 	if config.Codec != nil {
 		b.codec = config.Codec
 	}
-	if err = c.Subscribe(config.Topic, consumer.MessageSelector{}, newConsumerHandler(b)); err != nil {
-		return nil, err
+
+	if config.ConsumerGroupName != "" {
+		c, err := rocketmq.NewPushConsumer(
+			consumer.WithNameServer(config.Hosts),
+			consumer.WithGroupName(config.ConsumerGroupName),
+			consumer.WithConsumerOrder(config.Order),
+			consumer.WithConsumerModel(func() consumer.MessageModel {
+				if config.BroadCasting {
+					return consumer.BroadCasting
+				}
+				return consumer.Clustering
+			}()),
+			consumer.WithConsumeMessageBatchMaxSize(1),
+			consumer.WithConsumeFromWhere(consumer.ConsumeFromLastOffset))
+		if err != nil {
+			return nil, err
+		}
+		b.consumer = c
+	}
+	if config.ProducerGroupName != "" {
+		p, err := rocketmq.NewProducer(
+			producer.WithNameServer(config.Hosts),
+			producer.WithRetry(3),
+			producer.WithGroupName(config.ProducerGroupName),
+		)
+		if err != nil {
+			return nil, err
+		}
+		b.producer = p
 	}
 	return b, nil
 }
@@ -89,11 +96,18 @@ func (b *RocketMQBroker) Start() error {
 			b.router[name] = mw(handler)
 		}
 	}
-	if err := b.producer.Start(); err != nil {
-		return err
+	if b.producer != nil {
+		if err := b.producer.Start(); err != nil {
+			return err
+		}
 	}
-	if err := b.consumer.Start(); err != nil {
-		return err
+	if b.consumer != nil {
+		if err := b.consumer.Subscribe(b.topic, consumer.MessageSelector{}, newConsumerHandler(b)); err != nil {
+			return err
+		}
+		if err := b.consumer.Start(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

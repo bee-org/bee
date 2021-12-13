@@ -47,6 +47,9 @@ func (c LNBCodec) Encode(name string, body interface{}) (data []byte, err error)
 
 func (c LNBCodec) Decode(data []byte) (name string, body []byte) {
 	length := int(uint8(data[0]))
+	if len(data) < length+1 {
+		return
+	}
 	name = string(data[1 : length+1])
 	body = data[length+1:]
 	return

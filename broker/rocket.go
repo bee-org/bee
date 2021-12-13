@@ -6,10 +6,12 @@ import (
 	"github.com/apache/rocketmq-client-go/v2/consumer"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/apache/rocketmq-client-go/v2/producer"
+	"github.com/apache/rocketmq-client-go/v2/rlog"
 	"github.com/fanjindong/bee"
 	"github.com/fanjindong/bee/codec"
 	"github.com/fanjindong/bee/middleware"
 	"sync"
+	"time"
 )
 
 type RocketMQConfig struct {
@@ -23,6 +25,7 @@ type RocketMQConfig struct {
 }
 
 func NewRocketMQBroker(config RocketMQConfig) (IBroker, error) {
+	rlog.SetLogLevel("error")
 	b := &RocketMQBroker{codec: &codec.LNBCodec{}, topic: config.Topic, router: map[string]bee.Handler{}}
 	if config.Codec != nil {
 		b.codec = config.Codec
@@ -68,15 +71,6 @@ type RocketMQBroker struct {
 	router   map[string]bee.Handler
 	codec    codec.Codec
 	mws      []middleware.Middleware
-}
-
-func (b *RocketMQBroker) Send(ctx context.Context, name string, body interface{}) error {
-	data, err := b.codec.Encode(name, body)
-	if err != nil {
-		return err
-	}
-	_, err = b.producer.SendSync(ctx, &primitive.Message{Topic: b.topic, Body: data})
-	return err
 }
 
 func (b *RocketMQBroker) Register(name string, handler bee.Handler, opts ...bee.Option) {
@@ -137,5 +131,68 @@ func newConsumerHandler(b *RocketMQBroker) func(context.Context, ...*primitive.M
 			}
 		}
 		return consumer.ConsumeSuccess, nil
+	}
+}
+
+func (b *RocketMQBroker) Send(ctx context.Context, name string, body interface{}) error {
+	data, err := b.codec.Encode(name, body)
+	if err != nil {
+		return err
+	}
+	msg := primitive.NewMessage(b.topic, data)
+	_, err = b.producer.SendSync(ctx, msg)
+	return err
+}
+
+func (b *RocketMQBroker) SendDelay(ctx context.Context, name string, body interface{}, delay time.Duration) error {
+	data, err := b.codec.Encode(name, body)
+	if err != nil {
+		return err
+	}
+	msg := primitive.NewMessage(b.topic, data).WithDelayTimeLevel(duration2DelayTimeLevel(delay))
+	_, err = b.producer.SendSync(ctx, msg)
+	return err
+}
+
+func duration2DelayTimeLevel(d time.Duration) int {
+	s := d.Seconds()
+	// reference delay level definition: 1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h
+	switch {
+	case s <= 1:
+		return 1
+	case s <= 5:
+		return 2
+	case s <= 10:
+		return 3
+	case s <= 30:
+		return 4
+	case s <= 60:
+		return 5
+	case s <= 60*2:
+		return 6
+	case s <= 60*3:
+		return 7
+	case s <= 60*4:
+		return 8
+	case s <= 60*5:
+		return 9
+	case s <= 60*6:
+		return 10
+	case s <= 60*7:
+		return 11
+	case s <= 60*8:
+		return 12
+	case s <= 60*9:
+		return 13
+	case s <= 60*10:
+		return 14
+	case s <= 60*20:
+		return 15
+	case s <= 60*30:
+		return 16
+	case s <= 60*60:
+		return 17
+	default:
+		return 18
 	}
 }

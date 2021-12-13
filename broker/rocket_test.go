@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-var broker IBroker
+var (
+	broker IBroker
+	ctx    = context.Background()
+)
 
 func TestMain(m *testing.M) {
 	initRocketMQBroker()
@@ -37,33 +40,10 @@ func initRocketMQBroker() {
 	return
 }
 
-//func TestRocketMQBroker_Send(t *testing.T) {
-//	type args struct {
-//		ctx  context.Context
-//		name string
-//		body interface{}
-//	}
-//	tests := []struct {
-//		name    string
-//		args    args
-//		wantErr bool
-//	}{
-//		{args: args{ctx: context.TODO(), name: "print", body: 1}},
-//	}
-//	b := initRocketMQBroker()
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			if err := b.Send(tt.args.ctx, tt.args.name, tt.args.body); (err != nil) != tt.wantErr {
-//				t.Errorf("Send() error = %v, wantErr %v", err, tt.wantErr)
-//			}
-//		})
-//	}
-//}
-
 func printHandler(c *bee.Context) error {
-	var result int64
+	var result string
 	err := c.Parse(&result)
-	fmt.Println("printHandler", result, err)
+	fmt.Println("printHandler, consumer: ", time.Now().String(), result, err)
 	return nil
 }
 
@@ -92,4 +72,30 @@ func TestRocketMQBroker_Close(t *testing.T) {
 		})
 		time.Sleep(1 * time.Second)
 	}
+}
+
+func TestRocketMQBroker_SendDelay(t *testing.T) {
+	type args struct {
+		ctx   context.Context
+		name  string
+		body  interface{}
+		delay time.Duration
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{args: args{ctx: ctx, name: "print", body: fmt.Sprintf("product: %s, delay 1s", time.Now().String()), delay: 1 * time.Second}},
+		{args: args{ctx: ctx, name: "print", body: fmt.Sprintf("product: %s, delay 3s", time.Now().String()), delay: 3 * time.Second}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := broker.SendDelay(tt.args.ctx, tt.args.name, tt.args.body, tt.args.delay); (err != nil) != tt.wantErr {
+				t.Errorf("SendDelay() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			t.Log("SendDelay success.", tt.args.name, tt.args.body, tt.args.delay)
+		})
+	}
+	time.Sleep(10 * time.Second)
 }

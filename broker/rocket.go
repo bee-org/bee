@@ -89,10 +89,10 @@ func (b *RocketMQBroker) Start() error {
 			b.router[name] = mw(handler)
 		}
 	}
-	if err := b.consumer.Start(); err != nil {
+	if err := b.producer.Start(); err != nil {
 		return err
 	}
-	if err := b.producer.Start(); err != nil {
+	if err := b.consumer.Start(); err != nil {
 		return err
 	}
 	return nil

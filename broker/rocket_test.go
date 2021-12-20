@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/fanjindong/bee"
+	"github.com/fanjindong/bee/middleware"
 	"os"
 	"testing"
 	"time"
@@ -33,6 +34,8 @@ func initRocketMQBroker() {
 		panic(err)
 	}
 	b.Register("print", printHandler)
+	b.Register("sleep", sleepHandler)
+	b.Middleware(testFmtCostMw())
 	if err = b.Start(); err != nil {
 		panic(err)
 	}
@@ -47,9 +50,16 @@ func printHandler(c *bee.Context) error {
 	return nil
 }
 
+func sleepHandler(c *bee.Context) error {
+	var d time.Duration
+	err := c.Parse(&d)
+	time.Sleep(d)
+	return err
+}
+
 func TestRocketMQBroker_Send(t *testing.T) {
 	time.Sleep(1 * time.Second)
-	broker.Send(context.TODO(), "print", time.Now().Second())
+	broker.Send(context.TODO(), "print", time.Now().String())
 	//time.Sleep(1 * time.Second)
 	//broker.Send(context.TODO(), "print", 5)
 	//time.Sleep(1 * time.Second)
@@ -97,5 +107,24 @@ func TestRocketMQBroker_SendDelay(t *testing.T) {
 			t.Log("SendDelay success.", tt.args.name, tt.args.body, tt.args.delay)
 		})
 	}
+	time.Sleep(10 * time.Second)
+}
+
+func testFmtCostMw() middleware.Middleware {
+	return func(handler bee.Handler) bee.Handler {
+		return func(ctx *bee.Context) error {
+			start := time.Now()
+			defer func() {
+				fmt.Println(ctx.Name(), "req:", ctx.Req(), "cost:", time.Now().Sub(start).String())
+			}()
+			return handler(ctx)
+		}
+	}
+}
+
+func TestRocketMQBroker_Middleware(t *testing.T) {
+	t.Log(broker.Send(ctx, "sleep", 1*time.Second))
+	t.Log(broker.Send(ctx, "sleep", 3*time.Second))
+	t.Log(broker.Send(ctx, "sleep", 4*time.Second))
 	time.Sleep(10 * time.Second)
 }

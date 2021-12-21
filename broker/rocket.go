@@ -21,6 +21,8 @@ type RocketMQConfig struct {
 	ConsumerGroupName string
 	Order             bool
 	BroadCasting      bool
+	InstanceName      string
+	AllocateStrategy  func(string, string, []*primitive.MessageQueue, []string) []*primitive.MessageQueue
 	Codec             codec.Codec
 }
 
@@ -32,7 +34,7 @@ func NewRocketMQBroker(config RocketMQConfig) (IBroker, error) {
 	}
 
 	if config.ConsumerGroupName != "" {
-		c, err := rocketmq.NewPushConsumer(
+		opts := []consumer.Option{
 			consumer.WithNameServer(config.Hosts),
 			consumer.WithGroupName(config.ConsumerGroupName),
 			consumer.WithConsumerOrder(config.Order),
@@ -43,7 +45,15 @@ func NewRocketMQBroker(config RocketMQConfig) (IBroker, error) {
 				return consumer.Clustering
 			}()),
 			consumer.WithConsumeMessageBatchMaxSize(1),
-			consumer.WithConsumeFromWhere(consumer.ConsumeFromLastOffset))
+			consumer.WithConsumeFromWhere(consumer.ConsumeFromLastOffset),
+		}
+		if config.InstanceName != "" {
+			opts = append(opts, consumer.WithInstance(config.InstanceName))
+		}
+		if config.AllocateStrategy != nil {
+			opts = append(opts, consumer.WithStrategy(config.AllocateStrategy))
+		}
+		c, err := rocketmq.NewPushConsumer(opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +117,7 @@ func (b *RocketMQBroker) Start() error {
 }
 
 func (b *RocketMQBroker) Close() error {
-	b.producer.Shutdown()
+	_ = b.producer.Shutdown()
 	return b.consumer.Shutdown()
 }
 

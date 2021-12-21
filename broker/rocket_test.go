@@ -2,10 +2,13 @@ package broker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/fanjindong/bee"
 	"github.com/fanjindong/bee/middleware"
 	"os"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -35,6 +38,7 @@ func initRocketMQBroker() {
 	}
 	b.Register("print", printHandler)
 	b.Register("sleep", sleepHandler)
+	b.Register("counter", counterHandler)
 	b.Middleware(testFmtCostMw())
 	if err = b.Start(); err != nil {
 		panic(err)
@@ -55,6 +59,15 @@ func sleepHandler(c *bee.Context) error {
 	err := c.Parse(&d)
 	time.Sleep(d)
 	return err
+}
+
+var counter int64
+
+func counterHandler(c *bee.Context) error {
+	var i int
+	c.Parse(&i)
+	atomic.AddInt64(&counter, 1)
+	return nil
 }
 
 func TestRocketMQBroker_Send(t *testing.T) {
@@ -115,7 +128,8 @@ func testFmtCostMw() middleware.Middleware {
 		return func(ctx *bee.Context) error {
 			start := time.Now()
 			defer func() {
-				fmt.Println(ctx.Name(), "req:", ctx.Req(), "cost:", time.Now().Sub(start).String())
+				req, _ := json.Marshal(ctx.Req())
+				fmt.Println(ctx.Name(), "req:", string(req), "cost:", time.Now().Sub(start).String())
 			}()
 			return handler(ctx)
 		}
@@ -127,4 +141,17 @@ func TestRocketMQBroker_Middleware(t *testing.T) {
 	t.Log(broker.Send(ctx, "sleep", 3*time.Second))
 	t.Log(broker.Send(ctx, "sleep", 4*time.Second))
 	time.Sleep(10 * time.Second)
+}
+
+func TestNewRocketMQBroker_Counter(t *testing.T) {
+	n := 10
+	for i := 0; i < n; i++ {
+		t.Run(strconv.FormatInt(int64(i), 10), func(t *testing.T) {
+			broker.Send(ctx, "counter", i)
+		})
+	}
+	time.Sleep(3 * time.Second)
+	if counter != int64(n) {
+		t.Errorf("Counter() error, got = %v, want %v", counter, n)
+	}
 }

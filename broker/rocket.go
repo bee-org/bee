@@ -62,11 +62,15 @@ func NewRocketMQBroker(config RocketMQConfig) (IBroker, error) {
 		b.consumer = c
 	}
 	if config.ProducerGroupName != "" {
-		p, err := rocketmq.NewProducer(
+		opts := []producer.Option{
 			producer.WithNameServer(config.Hosts),
 			producer.WithRetry(3),
 			producer.WithGroupName(config.ProducerGroupName),
-		)
+		}
+		if config.InstanceName != "" {
+			opts = append(opts, producer.WithInstanceName(config.InstanceName))
+		}
+		p, err := rocketmq.NewProducer(opts...)
 		if err != nil {
 			return nil, err
 		}

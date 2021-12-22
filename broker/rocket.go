@@ -21,9 +21,11 @@ type RocketMQConfig struct {
 	ConsumerGroupName string
 	Order             bool
 	BroadCasting      bool
-	InstanceName      string
-	AllocateStrategy  func(string, string, []*primitive.MessageQueue, []string) []*primitive.MessageQueue
-	Codec             codec.Codec
+	// default processId, warning: using defaults can be problematic when docker is deployed
+	InstanceName string
+	// Strategy Algorithm for message allocating between consumers. reference: https://github.com/apache/rocketmq-client-go/blob/master/consumer/strategy.go
+	AllocateStrategy func(string, string, []*primitive.MessageQueue, []string) []*primitive.MessageQueue
+	Codec            codec.Codec
 }
 
 func NewRocketMQBroker(config RocketMQConfig) (IBroker, error) {

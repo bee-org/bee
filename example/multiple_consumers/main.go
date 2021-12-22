@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -38,15 +40,20 @@ func main() {
 	flag.Parse()
 
 	instanceName := GetLocalIP() + "@" + strconv.Itoa(os.Getpid())
-	//instanceName := strconv.Itoa(os.Getpid())
-	b, err := broker.NewRocketMQBroker(broker.RocketMQConfig{
+	config := broker.RocketMQConfig{
 		Hosts:             []string{"http://rmq1te.test.srv.mc.dd:9876", "http://rmq2te.test.srv.mc.dd:9876"},
 		Topic:             "BEE",
 		ProducerGroupName: "BEE-producer",
 		ConsumerGroupName: "BEE-consumer",
 		InstanceName:      instanceName,
 		//AllocateStrategy:  consumer.AllocateByAveragely,
-	})
+	}
+	if op == "producer" {
+		config.ConsumerGroupName = ""
+	} else {
+		config.ProducerGroupName = ""
+	}
+	b, err := broker.NewRocketMQBroker(config)
 	if err != nil {
 		panic(err)
 	}
@@ -56,15 +63,17 @@ func main() {
 		panic(err)
 	}
 	if op == "producer" {
-		err = b.Send(context.TODO(), name, data)
-		fmt.Println("producer err:", err)
-		//for i := 0; i < 100; i++ {
-		//	go func() {
-		//		err = b.Send(context.TODO(), name, data)
-		//		fmt.Println("producer err:", err)
-		//	}()
-		//}
-		//time.Sleep(10 * time.Second)
+		wg := sync.WaitGroup{}
+		for _, item := range strings.Split(data, ",") {
+			wg.Add(1)
+			v := item
+			go func() {
+				err = b.Send(context.TODO(), name, v)
+				fmt.Printf("producer %s,%s err:%v", name, v, err)
+				wg.Done()
+			}()
+		}
+		wg.Wait()
 	} else {
 		fmt.Println("consumer instance:", instanceName)
 		block := make(chan struct{})

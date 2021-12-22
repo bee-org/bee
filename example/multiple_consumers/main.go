@@ -7,7 +7,6 @@ import (
 	"github.com/fanjindong/bee"
 	"github.com/fanjindong/bee/broker"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +38,7 @@ func main() {
 	flag.StringVar(&data, "data", "", "data: any")
 	flag.Parse()
 
-	instanceName := GetLocalIP() + "@" + strconv.Itoa(os.Getpid())
+	instanceName := strconv.Itoa(time.Now().Nanosecond())
 	config := broker.RocketMQConfig{
 		Hosts:             []string{"http://rmq1te.test.srv.mc.dd:9876", "http://rmq2te.test.srv.mc.dd:9876"},
 		Topic:             "BEE",

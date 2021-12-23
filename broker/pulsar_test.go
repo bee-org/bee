@@ -3,20 +3,21 @@ package broker
 import (
 	"context"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-func initRocketMQBroker() IBroker {
-	b, err := NewRocketMQBroker(RocketMQConfig{
-		Hosts:             strings.Split(os.Getenv("ROCKETMQ_URL"), ","),
-		Topic:             "BEE",
-		ProducerGroupName: "BEE-producer",
-		ConsumerGroupName: "BEE-consumer",
-		Order:             false,
-		BroadCasting:      false,
+var ctx = context.Background()
+
+func initPulSarBroker() IBroker {
+	b, err := NewPulSarBroker(PulsarConfig{
+		URL:                 os.Getenv("PULSAR_URL"),
+		Topic:               "persistent://ddmc/test/bee",
+		SubscriptionName:    "sub-test",
+		AuthToken:           "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.w5mhJRHR1i-3pbHNqGqeVHO16KPB4GkqEIStoHey8cdQNDnLnAED4SdQh_QOi2aHom6hbJ4fUxR0M156CuvPcz3LtSwwubJgPva9AgMFLLFS8mTDCP_BX_F8_WxtKkL7j3aWx38qbO2-P_5o9Jpa5Il3xoakP7vcL-aO2KHrp7XpJwZCw-MSthSc6ZDhIWNOs0UnKqSBzkNF1rDmgy0t-x4ppvgsCNui_kymtVREKpu72imSSDpQhdbzhbBijCZFsL23LxLe7jt8Iox9B_qw71bKAyLrOGZjgcse9HYmUBeCKfIX9A_JJmNn1I-oCT3t1ULJaFq68ToMFczTmFNe1w",
+		RetryEnable:         true,
+		NackRedeliveryDelay: 1 * time.Second,
 	})
 	if err != nil {
 		panic(err)
@@ -33,7 +34,7 @@ func initRocketMQBroker() IBroker {
 	return b
 }
 
-func TestRocketMQBroker_SendPrint(t *testing.T) {
+func TestPulSarBroker_SendPrint(t *testing.T) {
 	type args struct {
 		ctx  context.Context
 		name string
@@ -49,7 +50,7 @@ func TestRocketMQBroker_SendPrint(t *testing.T) {
 		{args: args{ctx: ctx, name: "print", data: "b"}, wantResult: []string{"a", "b"}},
 		{args: args{ctx: ctx, name: "print", data: "c"}, wantResult: []string{"a", "b", "c"}},
 	}
-	b := initRocketMQBroker()
+	b := initPulSarBroker()
 	defer func() { _ = b.Close() }()
 
 	for _, tt := range tests {
@@ -66,7 +67,7 @@ func TestRocketMQBroker_SendPrint(t *testing.T) {
 	}
 }
 
-func TestRocketMQBroker_SendCounter(t *testing.T) {
+func TestPulSarBroker_SendCounter(t *testing.T) {
 	type args struct {
 		ctx   context.Context
 		batch int
@@ -81,7 +82,7 @@ func TestRocketMQBroker_SendCounter(t *testing.T) {
 		{args: args{ctx: ctx, batch: 10}, wantResult: 11},
 		{args: args{ctx: ctx, batch: 100}, wantResult: 111},
 	}
-	b := initRocketMQBroker()
+	b := initPulSarBroker()
 	defer func() { _ = b.Close() }()
 
 	for _, tt := range tests {
@@ -105,7 +106,33 @@ func TestRocketMQBroker_SendCounter(t *testing.T) {
 	}
 }
 
-func TestRocketMQBroker_SendDelay(t *testing.T) {
+func TestPulSarBroker_SendRetry(t *testing.T) {
+	type args struct {
+		ctx  context.Context
+		data string
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantErr    bool
+		wantResult int64
+	}{
+		{args: args{ctx: ctx, data: "3"}, wantResult: 1},
+	}
+	b := initPulSarBroker()
+	defer func() { _ = b.Close() }()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := b.Send(tt.args.ctx, "error", tt.args.data); (err != nil) != tt.wantErr {
+				t.Errorf("Send() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			time.Sleep(30 * time.Second)
+		})
+	}
+}
+
+func TestPulSarBroker_SendDelay(t *testing.T) {
 	type args struct {
 		ctx   context.Context
 		data  interface{}
@@ -117,11 +144,11 @@ func TestRocketMQBroker_SendDelay(t *testing.T) {
 		wantErr    bool
 		wantResult []string
 	}{
-		{args: args{ctx: ctx, delay: 1 * time.Second}},
-		//{args: args{ctx: ctx, delay: 3 * time.Second}},
-		//{args: args{ctx: ctx, delay: 5 * time.Second}},
+		{args: args{ctx: ctx, delay: 0 * time.Second}},
+		{args: args{ctx: ctx, delay: 3 * time.Second}},
+		{args: args{ctx: ctx, delay: 5 * time.Second}},
 	}
-	b := initRocketMQBroker()
+	b := initPulSarBroker()
 	defer func() { _ = b.Close() }()
 
 	for _, tt := range tests {

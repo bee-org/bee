@@ -4,30 +4,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/fanjindong/bee"
 	"github.com/fanjindong/bee/broker"
-	"net"
+	"github.com/fanjindong/bee/example"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
-
-func printHandler(c *bee.Context) error {
-	var result string
-	err := c.Parse(&result)
-	fmt.Println("printHandler", result, err)
-	return nil
-}
-
-func sleepHandler(c *bee.Context) error {
-	var s string
-	err := c.Parse(&s)
-	d, _ := strconv.Atoi(s)
-	time.Sleep(time.Duration(d) * time.Second)
-	fmt.Println("sleepHandler", d, err)
-	return err
-}
 
 func main() {
 	var op string
@@ -38,6 +21,8 @@ func main() {
 	flag.StringVar(&data, "data", "", "data: any")
 	flag.Parse()
 
+	var b broker.IBroker
+	var err error
 	instanceName := strconv.Itoa(time.Now().Nanosecond())
 	config := broker.RocketMQConfig{
 		Hosts:             []string{"http://rmq1te.test.srv.mc.dd:9876", "http://rmq2te.test.srv.mc.dd:9876"},
@@ -52,13 +37,13 @@ func main() {
 	} else {
 		config.ProducerGroupName = ""
 	}
-	b, err := broker.NewRocketMQBroker(config)
+	b, err = broker.NewRocketMQBroker(config)
 	if err != nil {
 		panic(err)
 	}
-	b.Register("print", printHandler)
-	b.Register("sleep", sleepHandler)
-	if err = b.Start(); err != nil {
+	b.Register("Print", example.PrintHandler)
+	b.Register("Sleep", example.SleepHandler)
+	if err = b.Worker(); err != nil {
 		panic(err)
 	}
 	if op == "producer" {
@@ -74,25 +59,8 @@ func main() {
 		}
 		wg.Wait()
 	} else {
-		fmt.Println("consumer instance:", instanceName)
+		fmt.Println("consumer ready")
 		block := make(chan struct{})
 		<-block
 	}
-}
-
-// GetLocalIP returns the non loopback local IP of the host
-func GetLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ""
-	}
-	for _, address := range addrs {
-		// check the address type and if it is not a loopback the display it
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
-	return ""
 }

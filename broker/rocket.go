@@ -74,6 +74,9 @@ func NewRocketMQBroker(config RocketMQConfig) (IBroker, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err = p.Start(); err != nil {
+			return nil, err
+		}
 		b.producer = p
 	}
 	return b, nil
@@ -100,15 +103,10 @@ func (b *RocketMQBroker) Middleware(mws ...middleware.Middleware) {
 	b.mws = append(b.mws, mws...)
 }
 
-func (b *RocketMQBroker) Start() error {
+func (b *RocketMQBroker) Worker() error {
 	for _, mw := range b.mws {
 		for name, handler := range b.router {
 			b.router[name] = mw(handler)
-		}
-	}
-	if b.producer != nil {
-		if err := b.producer.Start(); err != nil {
-			return err
 		}
 	}
 	if b.consumer != nil {

@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+// DLQPolicy Configuration for Dead Letter Queue consumer policy
+type DLQPolicy struct {
+	// Maximum number of times that a message will be delivered before being sent to the dead letter queue.
+	MaxDeliveries uint32
+	// Name of the topic where the failing messages will be sent.
+	DeadLetterTopic string
+	// Name of the topic where the retry messages will be sent.
+	RetryLetterTopic string
+}
+
 type PulsarConfig struct {
 	// Configure the service URL for the Pulsar service.
 	// This parameter is required
@@ -41,10 +51,10 @@ type PulsarConfig struct {
 	// processed. Default is 1min.
 	NackRedeliveryDelay time.Duration
 	// Auto retry send messages to default filled DLQPolicy topics
-	// DlqTopicSuffix    = "-DLQ"
-	// RetryTopicSuffix  = "-RETRY"
-	// MaxReconsumeTimes = 16
+	// default RetryTopic: SubscriptionName+"-RETRY", DlqTopic: SubscriptionName+"-DLQ", MaxReconsumeTimes = 16
 	RetryEnable bool
+	// Custom RetryTopic,DlqTopic,MaxReconsumeTimes
+	DLQ *DLQPolicy
 	// Define the number of worker processes, default 1
 	WorkerNumber int
 }
@@ -89,7 +99,7 @@ func (b *PulSarBroker) Worker() error {
 		b.config.WorkerNumber = 1
 	}
 	channel := make(chan pulsar.ConsumerMessage, b.config.WorkerNumber*2)
-	c, err := b.client.Subscribe(pulsar.ConsumerOptions{
+	opt := pulsar.ConsumerOptions{
 		Topic:               b.config.Topic,
 		SubscriptionName:    b.config.SubscriptionName,
 		Type:                pulsar.Shared,
@@ -97,7 +107,15 @@ func (b *PulSarBroker) Worker() error {
 		MessageChannel:      channel,
 		RetryEnable:         b.config.RetryEnable,
 		NackRedeliveryDelay: b.config.NackRedeliveryDelay,
-	})
+	}
+	if b.config.DLQ != nil {
+		opt.DLQ = &pulsar.DLQPolicy{
+			MaxDeliveries:    b.config.DLQ.MaxDeliveries,
+			DeadLetterTopic:  b.config.DLQ.DeadLetterTopic,
+			RetryLetterTopic: b.config.DLQ.RetryLetterTopic,
+		}
+	}
+	c, err := b.client.Subscribe(opt)
 	if err != nil {
 		return err
 	}

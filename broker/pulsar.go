@@ -126,7 +126,6 @@ func (b *PulSarBroker) Worker() error {
 
 func (b *PulSarBroker) Close() error {
 	if b.consumer != nil {
-		_ = b.consumer.Unsubscribe()
 		b.consumer.Close()
 	}
 	b.producer.Close()

@@ -1,37 +1,48 @@
-package broker
+package pulsar
 
 import (
 	"context"
+	"github.com/fanjindong/bee/broker"
+	"github.com/fanjindong/bee/example"
 	"os"
 	"sync"
 	"testing"
 	"time"
 )
 
-var ctx = context.Background()
+var (
+	ctx = context.Background()
+	b   broker.IBroker
+	err error
+)
 
-func initPulSarBroker() IBroker {
-	b, err := NewPulSarBroker(PulsarConfig{
-		URL:                 os.Getenv("PULSAR_URL"),
-		Topic:               "persistent://ddmc/test/bee",
-		SubscriptionName:    "sub-test",
-		AuthToken:           "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.w5mhJRHR1i-3pbHNqGqeVHO16KPB4GkqEIStoHey8cdQNDnLnAED4SdQh_QOi2aHom6hbJ4fUxR0M156CuvPcz3LtSwwubJgPva9AgMFLLFS8mTDCP_BX_F8_WxtKkL7j3aWx38qbO2-P_5o9Jpa5Il3xoakP7vcL-aO2KHrp7XpJwZCw-MSthSc6ZDhIWNOs0UnKqSBzkNF1rDmgy0t-x4ppvgsCNui_kymtVREKpu72imSSDpQhdbzhbBijCZFsL23LxLe7jt8Iox9B_qw71bKAyLrOGZjgcse9HYmUBeCKfIX9A_JJmNn1I-oCT3t1ULJaFq68ToMFczTmFNe1w",
-		RetryEnable:         true,
+func TestMain(m *testing.M) {
+	b, err = NewBroker(Config{
+		URL:              os.Getenv("PULSAR_URL"),
+		Topic:            "persistent://public/default/bee",
+		SubscriptionName: "sub-test",
+		AuthToken:        "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.bFEKUj29bpCRNPE5oKG5VxOFslkm5JKK4B-9zQrrpVIEy4_qvzu1AsyYB266jtuTPTzQVj8Kp8pffpTEg8GJuMQgt1VwDcgJ5k80pB5h6yjwnFqtP3TbLxvxdtIDAkQqyjbpstBD_57owJKS7l04YzpaiEJMTeNQqk7WIfYld5y7BFsSR7-8X6U6PoNk9E6S5R7XjLHvwquTFyUWdIHS-OeychhAKZPf415do5UliP42ZDQ1xfRxEJmwJD1vnzaZOQdP5y5zWFtkbhOACrI_ah2Tr9tMZcZvLgwt6T8ixaYhxG4hChjQQP97vZW65Wz1lcsnjl6Rvx5qwwu62iI89g",
+		RetryEnable:      true,
+		DLQ: &DLQPolicy{
+			MaxDeliveries:    3,
+			DeadLetterTopic:  "sub-test-RETRY",
+			RetryLetterTopic: "sub-test-DLQ",
+		},
 		NackRedeliveryDelay: 1 * time.Second,
 	})
 	if err != nil {
 		panic(err)
 	}
-	b.Register("print", printHandler)
-	b.Register("sleep", sleepHandler)
-	b.Register("counter", counterHandler)
-	b.Register("error", errorHandler)
-	b.Register("delay", delayHandler)
+	b.Register("print", example.PrintHandler)
+	b.Register("sleep", example.SleepHandler)
+	b.Register("counter", example.CounterHandler)
+	b.Register("error", example.ErrorHandler)
+	b.Register("delay", example.DelayHandler)
 	//b.Middleware(testFmtCostMw())
 	if err = b.Worker(); err != nil {
 		panic(err)
 	}
-	return b
+	os.Exit(m.Run())
 }
 
 func TestPulSarBroker_SendPrint(t *testing.T) {
@@ -50,9 +61,6 @@ func TestPulSarBroker_SendPrint(t *testing.T) {
 		{args: args{ctx: ctx, name: "print", data: "b"}, wantResult: []string{"a", "b"}},
 		{args: args{ctx: ctx, name: "print", data: "c"}, wantResult: []string{"a", "b", "c"}},
 	}
-	b := initPulSarBroker()
-	defer func() { _ = b.Close() }()
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := b.Send(tt.args.ctx, tt.args.name, tt.args.data); (err != nil) != tt.wantErr {
@@ -82,9 +90,6 @@ func TestPulSarBroker_SendCounter(t *testing.T) {
 		{args: args{ctx: ctx, batch: 10}, wantResult: 11},
 		{args: args{ctx: ctx, batch: 100}, wantResult: 111},
 	}
-	b := initPulSarBroker()
-	defer func() { _ = b.Close() }()
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wg := sync.WaitGroup{}
@@ -99,8 +104,8 @@ func TestPulSarBroker_SendCounter(t *testing.T) {
 			}
 			wg.Wait()
 			time.Sleep(time.Duration(tt.args.batch) * 100 * time.Millisecond)
-			if counterResult != tt.wantResult {
-				t.Errorf("SendCounter() result = %v, want %v", counterResult, tt.wantResult)
+			if example.CounterResult != tt.wantResult {
+				t.Errorf("SendCounter() result = %v, want %v", example.CounterResult, tt.wantResult)
 			}
 		})
 	}
@@ -115,19 +120,19 @@ func TestPulSarBroker_SendRetry(t *testing.T) {
 		name       string
 		args       args
 		wantErr    bool
-		wantResult int64
+		wantResult int
 	}{
-		{args: args{ctx: ctx, data: "3"}, wantResult: 1},
+		{args: args{ctx: ctx, data: "err"}, wantResult: 3},
 	}
-	b := initPulSarBroker()
-	defer func() { _ = b.Close() }()
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := b.Send(tt.args.ctx, "error", tt.args.data); (err != nil) != tt.wantErr {
 				t.Errorf("Send() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			time.Sleep(30 * time.Second)
+			time.Sleep(10 * time.Second)
+			if example.ErrorCounter[tt.args.data] != tt.wantResult {
+				t.Errorf("SendRetry() got = %v, want %v", example.ErrorCounter[tt.args.data], tt.wantResult)
+			}
 		})
 	}
 }
@@ -148,17 +153,14 @@ func TestPulSarBroker_SendDelay(t *testing.T) {
 		{args: args{ctx: ctx, delay: 3 * time.Second}},
 		{args: args{ctx: ctx, delay: 5 * time.Second}},
 	}
-	b := initPulSarBroker()
-	defer func() { _ = b.Close() }()
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			want := time.Now().Add(tt.args.delay)
 			if err := b.SendDelay(tt.args.ctx, "delay", tt.args.data, tt.args.delay); (err != nil) != tt.wantErr {
 				t.Errorf("SendDelay() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			got := <-delayResult
-			if got.Before(want) || got.Sub(want).Seconds() >= 1 {
+			got := <-example.DelayResult
+			if got.Before(want) || got.Sub(want).Seconds() > 1 {
 				t.Errorf("SendDelay() got delay = %v, want %v", got.Second(), want.Second())
 			}
 		})

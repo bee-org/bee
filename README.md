@@ -2,6 +2,15 @@
 
 An asynchronous message execution framework based on the producer consumer model.
 
+# Features
+
+supported middleware
+
+-[ ] redis
+-[x] pulsar
+-[x] rocketmq
+-[ ] rabbitmq
+
 # Quick start
 
 ```go

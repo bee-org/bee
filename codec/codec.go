@@ -21,7 +21,7 @@ type Decode interface {
 type LNBCodec struct {
 }
 
-func (c LNBCodec) Encode(name string, body interface{}) (data []byte, err error) {
+func (c *LNBCodec) Encode(name string, body interface{}) (data []byte, err error) {
 	var bodyBytes []byte
 	//switch body.(type) {
 	//case uint, uint8, uint16, uint32, uint64, int, int8, int16, int32, int64, string, bool, complex64,complex128:
@@ -45,7 +45,7 @@ func (c LNBCodec) Encode(name string, body interface{}) (data []byte, err error)
 	return buf.Bytes(), nil
 }
 
-func (c LNBCodec) Decode(data []byte) (name string, body []byte) {
+func (c *LNBCodec) Decode(data []byte) (name string, body []byte) {
 	length := int(uint8(data[0]))
 	if len(data) < length+1 {
 		return

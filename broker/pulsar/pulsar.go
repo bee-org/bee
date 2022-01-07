@@ -1,10 +1,13 @@
-package broker
+package pulsar
 
 import (
 	"context"
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/apache/pulsar-client-go/pulsar/log"
 	"github.com/fanjindong/bee"
+	"github.com/fanjindong/bee/broker"
+	"github.com/fanjindong/bee/codec"
+	"github.com/fanjindong/bee/middleware"
 	"github.com/sirupsen/logrus"
 	"time"
 )
@@ -19,7 +22,7 @@ type DLQPolicy struct {
 	RetryLetterTopic string
 }
 
-type PulsarConfig struct {
+type Config struct {
 	// Configure the service URL for the Pulsar service.
 	// This parameter is required
 	URL string
@@ -57,17 +60,21 @@ type PulsarConfig struct {
 	DLQ *DLQPolicy
 	// Define the number of worker processes, default 1
 	WorkerNumber int
+	// Custom codec
+	Codec codec.Codec
 }
 
-type PulSarBroker struct {
-	*Broker
-	config   *PulsarConfig
+type Broker struct {
+	router   map[string]bee.Handler
+	codec    codec.Codec
+	mws      []middleware.Middleware
+	config   *Config
 	client   pulsar.Client
 	producer pulsar.Producer
 	consumer pulsar.Consumer
 }
 
-func NewPulSarBroker(config PulsarConfig) (IBroker, error) {
+func NewBroker(config Config) (broker.IBroker, error) {
 	logger := logrus.StandardLogger()
 	logger.SetLevel(logrus.ErrorLevel)
 	opt := pulsar.ClientOptions{
@@ -90,11 +97,30 @@ func NewPulSarBroker(config PulsarConfig) (IBroker, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &PulSarBroker{Broker: newBroker(), config: &config, client: client, producer: p}, nil
+	if config.Codec == nil {
+		config.Codec = &codec.LNBCodec{}
+	}
+	return &Broker{
+		router: make(map[string]bee.Handler),
+		codec:  config.Codec,
+		config: &config, client: client, producer: p,
+	}, nil
 }
 
-func (b *PulSarBroker) Worker() error {
-	_ = b.Broker.Worker()
+func (b *Broker) Register(name string, handler bee.Handler, opts ...bee.Option) {
+	b.router[name] = handler
+}
+
+func (b *Broker) Middleware(mws ...middleware.Middleware) {
+	b.mws = append(b.mws, mws...)
+}
+
+func (b *Broker) Worker() error {
+	for _, mw := range b.mws {
+		for name, handler := range b.router {
+			b.router[name] = mw(handler)
+		}
+	}
 	if b.config.WorkerNumber <= 0 {
 		b.config.WorkerNumber = 1
 	}
@@ -124,16 +150,16 @@ func (b *PulSarBroker) Worker() error {
 	return nil
 }
 
-func (b *PulSarBroker) Close() error {
+func (b *Broker) Close() error {
 	if b.consumer != nil {
 		b.consumer.Close()
 	}
 	b.producer.Close()
 	b.client.Close()
-	return b.Broker.Close()
+	return nil
 }
 
-func (b *PulSarBroker) Send(ctx context.Context, name string, data interface{}) error {
+func (b *Broker) Send(ctx context.Context, name string, data interface{}) error {
 	body, err := b.codec.Encode(name, data)
 	if err != nil {
 		return err
@@ -142,7 +168,10 @@ func (b *PulSarBroker) Send(ctx context.Context, name string, data interface{}) 
 	return err
 }
 
-func (b *PulSarBroker) SendDelay(ctx context.Context, name string, data interface{}, delay time.Duration) error {
+func (b *Broker) SendDelay(ctx context.Context, name string, data interface{}, delay time.Duration) error {
+	if delay == 0 {
+		return b.Send(ctx, name, data)
+	}
 	body, err := b.codec.Encode(name, data)
 	if err != nil {
 		return err
@@ -151,7 +180,7 @@ func (b *PulSarBroker) SendDelay(ctx context.Context, name string, data interfac
 	return err
 }
 
-func (b *PulSarBroker) watch(channel chan pulsar.ConsumerMessage) {
+func (b *Broker) watch(channel chan pulsar.ConsumerMessage) {
 	// Receive messages from channel. The channel returns a struct which contains message and the consumer from where
 	// the message was received. It's not necessary here since we have 1 single consumer, but the channel could be
 	// shared across multiple consumers as well
@@ -169,7 +198,7 @@ func (b *PulSarBroker) watch(channel chan pulsar.ConsumerMessage) {
 	}
 }
 
-func (b *PulSarBroker) handler(ctx context.Context, data []byte) error {
+func (b *Broker) handler(ctx context.Context, data []byte) error {
 	name, body := b.codec.Decode(data)
 	handler, ok := b.router[name]
 	if !ok {

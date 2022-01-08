@@ -1,5 +1,7 @@
 # bee
 
+![image](./images/bee_PNG74650.png)
+
 An asynchronous message execution framework based on the producer consumer model.
 
 # Features

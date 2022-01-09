@@ -8,10 +8,10 @@ An asynchronous message execution framework based on the producer consumer model
 
 supported middleware
 
--[ ] redis
--[x] pulsar
--[x] rocketmq
--[ ] rabbitmq
+- [ ] redis
+- [x] pulsar
+- [x] rocketmq
+- [ ] rabbitmq
 
 # Quick start
 

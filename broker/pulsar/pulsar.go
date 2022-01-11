@@ -160,7 +160,7 @@ func (b *Broker) Close() error {
 }
 
 func (b *Broker) Send(ctx context.Context, name string, data interface{}) error {
-	body, err := b.codec.Encode(name, data)
+	body, err := b.codec.Encode(&codec.Header{Name: name}, data)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (b *Broker) SendDelay(ctx context.Context, name string, data interface{}, d
 	if delay == 0 {
 		return b.Send(ctx, name, data)
 	}
-	body, err := b.codec.Encode(name, data)
+	body, err := b.codec.Encode(&codec.Header{Name: name}, data)
 	if err != nil {
 		return err
 	}
@@ -199,12 +199,12 @@ func (b *Broker) watch(channel chan pulsar.ConsumerMessage) {
 }
 
 func (b *Broker) handler(ctx context.Context, data []byte) error {
-	name, body := b.codec.Decode(data)
-	handler, ok := b.router[name]
+	header, body := b.codec.Decode(data)
+	handler, ok := b.router[header.Name]
 	if !ok {
 		return nil
 	}
-	if err := handler(bee.NewContext(ctx, name, body)); err != nil {
+	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {
 		return err
 	}
 	return nil

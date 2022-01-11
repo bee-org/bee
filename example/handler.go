@@ -20,7 +20,13 @@ func PrintHandler(c *bee.Context) error {
 func SleepHandler(c *bee.Context) error {
 	var d time.Duration
 	err := c.Parse(&d)
-	time.Sleep(d)
+	select {
+	case <-c.Done():
+		fmt.Println("SleepHandler", d.String(), c.Err())
+		return c.Err()
+	case <-time.After(d):
+	}
+	fmt.Println("SleepHandler", d.String(), err)
 	return err
 }
 

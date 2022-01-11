@@ -2,14 +2,14 @@ package redis
 
 import (
 	"context"
-	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/fanjindong/bee"
 	"github.com/fanjindong/bee/broker"
 	"github.com/fanjindong/bee/codec"
-	"github.com/fanjindong/bee/middleware"
 	"github.com/go-redis/redis/v8"
+	"math"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -24,27 +24,30 @@ type Config struct {
 	URL   string
 	Topic string
 	// The maximum number of times a message should be retried. default 16 times.
-	MaxReconsumeTimes int
-	// The Duration of backoff to apply between retries.
-	//Backoff time.Duration
+	MaxRetry uint8
+	//The Duration of backoff to apply between retries. default 2^retry*100ms
+	RetryBackoff func(retry uint8) time.Duration
 	// Custom codec
 	Codec codec.Codec
 	// Define the concurrency number of worker processes, default runtime.NumCPU()*2
 	Concurrency int
-	// The time period for each polling message is milliseconds, default 100ms
-	PollPeriod int
 }
 
 type Broker struct {
-	router map[string]bee.Handler
-	codec  codec.Codec
-	mws    []middleware.Middleware
+	*broker.Broker
 	config *Config
 
-	buffer chan []byte
-	closed chan struct{}
+	buffer   chan []byte
+	ctx      context.Context
+	cancel   context.CancelFunc
+	closed   chan struct{}
+	finished chan struct{}
 
 	c *redis.Client
+}
+
+var defaultRetryBackoff = func(retry uint8) time.Duration {
+	return time.Duration(math.Pow(2, float64(retry))*100) * time.Millisecond
 }
 
 func NewBroker(config Config) (broker.IBroker, error) {
@@ -53,181 +56,193 @@ func NewBroker(config Config) (broker.IBroker, error) {
 		return nil, err
 	}
 	if config.Codec == nil {
-		config.Codec = &codec.LNBCodec{}
+		config.Codec = &codec.VND{}
 	}
+	if config.RetryBackoff == nil {
+		config.RetryBackoff = defaultRetryBackoff
+	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Broker{
-		router: make(map[string]bee.Handler),
-		codec:  config.Codec,
-		config: &config,
-		closed: make(chan struct{}),
-		c:      redis.NewClient(opt)}, nil
-}
-
-func (b *Broker) Register(name string, handler bee.Handler, opts ...bee.Option) {
-	b.router[name] = handler
-}
-
-func (b *Broker) Middleware(mws ...middleware.Middleware) {
-	b.mws = append(b.mws, mws...)
+		Broker:   broker.NewBroker(),
+		config:   &config,
+		closed:   make(chan struct{}),
+		finished: make(chan struct{}),
+		ctx:      ctx, cancel: cancel,
+		c: redis.NewClient(opt)}, nil
 }
 
 func (b *Broker) Worker() error {
-	for _, mw := range b.mws {
-		for name, handler := range b.router {
-			b.router[name] = mw(handler)
-		}
-	}
+	_ = b.Broker.Worker()
 	if b.config.Concurrency < 1 {
 		b.config.Concurrency = runtime.NumCPU() * 2
 	}
 	b.buffer = make(chan []byte, b.config.Concurrency)
-	if b.config.PollPeriod < 1 {
-		b.config.PollPeriod = 100
-	}
-	channel := make(chan pulsar.ConsumerMessage, b.config.WorkerNumber*2)
-	opt := pulsar.ConsumerOptions{
-		Topic:               b.config.Topic,
-		SubscriptionName:    b.config.SubscriptionName,
-		Type:                pulsar.Shared,
-		ReceiverQueueSize:   b.config.ReceiverQueueSize,
-		MessageChannel:      channel,
-		RetryEnable:         b.config.RetryEnable,
-		NackRedeliveryDelay: b.config.NackRedeliveryDelay,
-	}
-	if b.config.DLQ != nil {
-		opt.DLQ = &pulsar.DLQPolicy{
-			MaxDeliveries:    b.config.DLQ.MaxDeliveries,
-			DeadLetterTopic:  b.config.DLQ.DeadLetterTopic,
-			RetryLetterTopic: b.config.DLQ.RetryLetterTopic,
-		}
-	}
-	c, err := b.client.Subscribe(opt)
-	if err != nil {
-		return err
-	}
-	b.consumer = c
-	b.watch(channel)
+	b.watch(b.ctx)
 	return nil
 }
 
 func (b *Broker) Close() error {
-	if b.consumer != nil {
-		b.consumer.Close()
-	}
-	b.producer.Close()
-	b.client.Close()
+	close(b.closed)
+	b.cancel()
+	// wait watch topic, watch delay, process finished
+	<-b.finished
 	return nil
 }
 
-func (b *Broker) Send(ctx context.Context, name string, data interface{}) error {
-	body, err := b.codec.Encode(name, data)
+func (b *Broker) Send(ctx context.Context, name string, value interface{}) error {
+	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
 		return err
 	}
-	_, err = b.producer.Send(ctx, &pulsar.ProducerMessage{Payload: body})
+	err = b.c.RPush(ctx, b.config.Topic, data).Err()
 	return err
 }
 
-func (b *Broker) SendDelay(ctx context.Context, name string, data interface{}, delay time.Duration) error {
+func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, delay time.Duration) error {
 	if delay == 0 {
-		return b.Send(ctx, name, data)
+		return b.Send(ctx, name, value)
 	}
-	body, err := b.codec.Encode(name, data)
+	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
 		return err
 	}
-	_, err = b.producer.Send(ctx, &pulsar.ProducerMessage{Payload: body, DeliverAfter: delay})
+	err = b.c.ZAdd(ctx, b.config.Topic+":DELAY", &redis.Z{Score: float64(time.Now().Add(delay).UnixNano()), Member: data}).Err()
 	return err
 }
 
-func (b *Broker) watch(channel chan pulsar.ConsumerMessage) {
-	// Receive messages from channel. The channel returns a struct which contains message and the consumer from where
-	// the message was received. It's not necessary here since we have 1 single consumer, but the channel could be
-	// shared across multiple consumers as well
-	pollPeriod := time.Duration(b.config.PollPeriod) * time.Millisecond
+func (b *Broker) watch(ctx context.Context) {
+	// watch topic,topic:DELAY, write to the buffer
+	delayed := make(chan struct{})
 	go func() {
 		for {
 			select {
 			case <-b.closed:
+				close(delayed)
 				return
 			default:
-				items, err := b.c.BLPop(context.Background(), pollPeriod, b.config.Topic).Result()
-				if err != nil {
-					continue
-				}
-				// items[0] - the name of the key where an element was popped
-				// items[1] - the value of the popped element
-				if len(items) != 2 {
-					continue
-				}
-				b.buffer <- []byte(items[1])
+				_ = b.getOneByQueue(ctx)
 			}
 		}
 	}()
+
 	go func() {
-		var items []string
-		var err error
-		key := b.config.Topic + ":RETRY"
 		for {
-			// Space out queries to ZSET so we don't bombard redis
-			// server with relentless ZRANGEBYSCOREs
-			time.Sleep(pollPeriod)
-			var result []byte
-			watchFunc := func(tx *redis.Tx) error {
-				now := time.Now().UTC().UnixNano()
-				// https://redis.io/commands/zrangebyscore
-				ctx := context.Background()
-				items, err = tx.ZRevRangeByScore(ctx, key, &redis.ZRangeBy{
-					Min: "0", Max: strconv.FormatInt(now, 10), Offset: 0, Count: 1,
-				}).Result()
-				if err != nil {
-					return err
-				}
-				if len(items) != 1 {
-					return redis.Nil
-				}
-
-				// only return the first zrange value if there are no other changes in this key
-				// to make sure a delayed task would only be consumed once
-				_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-					pipe.ZRem(ctx, key, items[0])
-					result = []byte(items[0])
-					return nil
-				})
-
-				return err
-			}
-
-			if err = b.c.Watch(context.Background(), watchFunc, key); err != nil {
+			select {
+			case <-delayed:
+				close(b.buffer)
 				return
-			} else {
-				break
+			default:
+				_ = b.getOneByDelayQueue(ctx)
+				time.Sleep(100 * time.Millisecond)
 			}
 		}
-
 	}()
-	for i := 0; i < b.config.WorkerNumber; i++ {
-		go func() {
-			for cm := range channel {
-				msg := cm.Message
-				if err := b.handler(context.Background(), msg.Payload()); err != nil {
-					b.consumer.NackID(msg.ID())
-					continue
+
+	go func() {
+		seat := make(chan struct{}, b.config.Concurrency)
+		defer close(seat)
+		for i := 0; i < b.config.Concurrency; i++ {
+			seat <- struct{}{}
+		}
+		wg := sync.WaitGroup{}
+		for {
+			select {
+			case data, open := <-b.buffer:
+				if !open {
+					wg.Wait()
+					close(b.finished)
+					return
 				}
-				b.consumer.AckID(msg.ID())
+				<-seat
+				wg.Add(1)
+				go func() {
+					_ = b.process(ctx, data)
+					wg.Done()
+					seat <- struct{}{}
+				}()
 			}
-		}()
-	}
+		}
+	}()
 }
 
 func (b *Broker) process(ctx context.Context, data []byte) error {
-	name, body := b.codec.Decode(data)
-	handler, ok := b.router[name]
+	header, body := b.config.Codec.Decode(data)
+	handler, ok := b.Router(header.Name)
 	if !ok {
 		return nil
 	}
-	if err := handler(bee.NewContext(ctx, name, body)); err != nil {
+	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {
+		_ = b.sendRetryQueue(&header, body)
 		return err
+	}
+	return nil
+}
+
+func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
+	if header.Retry >= b.config.MaxRetry {
+		return b.sendDeadLetterQueue(header, body)
+	}
+	score := float64(time.Now().Add(b.config.RetryBackoff(header.Retry)).UnixNano())
+	header.Retry++
+	data, err := b.config.Codec.Encode(header, body)
+	if err != nil {
+		return err
+	}
+	err = b.c.ZAdd(context.Background(), b.config.Topic+":DELAY", &redis.Z{Score: score, Member: data}).Err()
+	return err
+}
+
+func (b *Broker) sendDeadLetterQueue(header *codec.Header, body []byte) error {
+	data, err := b.config.Codec.Encode(header, body)
+	if err != nil {
+		return err
+	}
+	err = b.c.RPush(context.Background(), b.config.Topic+":DeadLetter", data).Err()
+	return err
+}
+
+func (b *Broker) getOneByDelayQueue(ctx context.Context) (err error) {
+	var items []string
+	var result []byte
+	key := b.config.Topic + ":DELAY"
+	watchFunc := func(tx *redis.Tx) error {
+		now := time.Now().UTC().UnixNano()
+		// https://redis.io/commands/zrangebyscore
+		items, err = tx.ZRevRangeByScore(ctx, key, &redis.ZRangeBy{
+			Min: "0", Max: strconv.FormatInt(now, 10), Offset: 0, Count: 1,
+		}).Result()
+		if err != nil {
+			return err
+		} else if len(items) == 0 {
+			return redis.Nil
+		}
+		// only return the first range value if there are no other changes in this key
+		// to make sure a delayed task would only be consumed once
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.ZRem(ctx, key, items[0])
+			result = []byte(items[0])
+			return nil
+		})
+		return err
+	}
+	err = b.c.Watch(ctx, watchFunc, key)
+	if len(result) > 0 {
+		b.buffer <- result
+	}
+	return
+}
+
+func (b *Broker) getOneByQueue(ctx context.Context) error {
+	items, err := b.c.BLPop(ctx, 1*time.Second, b.config.Topic).Result()
+	if err != nil {
+		return err
+	}
+	// items[0],items[1] - key,element
+	if len(items) < 2 {
+		return redis.Nil
+	}
+	if items[1] != "" {
+		b.buffer <- []byte(items[1])
 	}
 	return nil
 }

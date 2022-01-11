@@ -134,12 +134,12 @@ func (b *Broker) Close() error {
 }
 
 func (b *Broker) handler(ctx context.Context, data []byte) error {
-	name, body := b.codec.Decode(data)
-	handler, ok := b.router[name]
+	header, body := b.codec.Decode(data)
+	handler, ok := b.router[header.Name]
 	if !ok {
 		return nil
 	}
-	if err := handler(bee.NewContext(ctx, name, body)); err != nil {
+	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {
 		return err
 	}
 	return nil
@@ -157,7 +157,7 @@ func newConsumerHandler(b *Broker) func(context.Context, ...*primitive.MessageEx
 }
 
 func (b *Broker) Send(ctx context.Context, name string, body interface{}) error {
-	data, err := b.codec.Encode(name, body)
+	data, err := b.codec.Encode(&codec.Header{Name: name}, body)
 	if err != nil {
 		return err
 	}
@@ -170,7 +170,7 @@ func (b *Broker) SendDelay(ctx context.Context, name string, body interface{}, d
 	if delay == 0 {
 		return b.Send(ctx, name, body)
 	}
-	data, err := b.codec.Encode(name, body)
+	data, err := b.codec.Encode(&codec.Header{Name: name}, body)
 	if err != nil {
 		return err
 	}

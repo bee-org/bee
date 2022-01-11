@@ -2,7 +2,7 @@ package example
 
 import (
 	"fmt"
-	"github.com/fanjindong/bee"
+	"github.com/bee-org/bee"
 	"sync/atomic"
 	"time"
 )

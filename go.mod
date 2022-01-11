@@ -1,4 +1,4 @@
-module github.com/fanjindong/bee
+module github.com/bee-org/bee
 
 go 1.15
 

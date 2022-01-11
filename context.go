@@ -3,7 +3,7 @@ package bee
 import (
 	"context"
 	"encoding/json"
-	"github.com/fanjindong/bee/codec"
+	"github.com/bee-org/bee/codec"
 	"time"
 )
 

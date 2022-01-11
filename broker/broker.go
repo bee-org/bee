@@ -2,8 +2,8 @@ package broker
 
 import (
 	"context"
-	"github.com/fanjindong/bee"
-	"github.com/fanjindong/bee/middleware"
+	"github.com/bee-org/bee"
+	"github.com/bee-org/bee/middleware"
 	"time"
 )
 

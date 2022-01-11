@@ -2,8 +2,8 @@ package redis
 
 import (
 	"context"
-	"github.com/fanjindong/bee/broker"
-	"github.com/fanjindong/bee/example"
+	"github.com/bee-org/bee/broker"
+	"github.com/bee-org/bee/example"
 	"os"
 	"sync"
 	"testing"

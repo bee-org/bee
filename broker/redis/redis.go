@@ -2,9 +2,9 @@ package redis
 
 import (
 	"context"
-	"github.com/fanjindong/bee"
-	"github.com/fanjindong/bee/broker"
-	"github.com/fanjindong/bee/codec"
+	"github.com/bee-org/bee"
+	"github.com/bee-org/bee/broker"
+	"github.com/bee-org/bee/codec"
 	"github.com/go-redis/redis/v8"
 	"math"
 	"runtime"

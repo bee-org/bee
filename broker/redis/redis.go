@@ -23,8 +23,8 @@ type Config struct {
 	//		unix://<user>:<password>@</path/to/redis.sock>?db=<db_number>
 	URL   string
 	Topic string
-	// The maximum number of times a message should be retried. default 16 times.
-	MaxRetry uint8
+	// The maximum number of times the message is re-consumed. default 16 times.
+	RetryMaxReconsume uint8
 	//The Duration of backoff to apply between retries. default 2^retry*100ms
 	RetryBackoff func(retry uint8) time.Duration
 	// Custom codec
@@ -179,15 +179,15 @@ func (b *Broker) process(ctx context.Context, data []byte) error {
 }
 
 func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
-	if header.Retry >= b.config.MaxRetry {
+	header.Retry++
+	if header.Retry >= b.config.RetryMaxReconsume {
 		return b.sendDeadLetterQueue(header, body)
 	}
-	score := float64(time.Now().Add(b.config.RetryBackoff(header.Retry)).UnixNano())
-	header.Retry++
 	data, err := b.config.Codec.Encode(header, body)
 	if err != nil {
 		return err
 	}
+	score := float64(time.Now().Add(b.config.RetryBackoff(header.Retry - 1)).UnixNano())
 	err = b.c.ZAdd(context.Background(), b.config.Topic+":DELAY", &redis.Z{Score: score, Member: data}).Err()
 	return err
 }

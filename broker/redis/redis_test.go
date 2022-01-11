@@ -18,10 +18,10 @@ var (
 
 func TestMain(m *testing.M) {
 	b, err = NewBroker(Config{
-		URL:         os.Getenv("REDIS_URL"),
-		Topic:       "bee",
-		MaxRetry:    3,
-		Concurrency: 1,
+		URL:               os.Getenv("REDIS_URL"),
+		Topic:             "bee",
+		RetryMaxReconsume: 3,
+		Concurrency:       1,
 	})
 	if err != nil {
 		panic(err)
@@ -115,7 +115,7 @@ func TestPulSarBroker_SendRetry(t *testing.T) {
 		wantErr    bool
 		wantResult int
 	}{
-		{args: args{ctx: ctx, data: "err"}, wantResult: 4},
+		{args: args{ctx: ctx, data: "err"}, wantResult: 3},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

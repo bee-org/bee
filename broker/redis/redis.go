@@ -40,7 +40,6 @@ type Broker struct {
 	buffer   chan []byte
 	ctx      context.Context
 	cancel   context.CancelFunc
-	closed   chan struct{}
 	finished chan struct{}
 
 	c *redis.Client
@@ -63,12 +62,11 @@ func NewBroker(config Config) (broker.IBroker, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Broker{
-		Broker:   broker.NewBroker(),
-		config:   &config,
-		closed:   make(chan struct{}),
+		Broker: broker.NewBroker(),
+		config: &config,
+		ctx:    ctx, cancel: cancel,
 		finished: make(chan struct{}),
-		ctx:      ctx, cancel: cancel,
-		c: redis.NewClient(opt)}, nil
+		c:        redis.NewClient(opt)}, nil
 }
 
 func (b *Broker) Worker() error {
@@ -82,7 +80,6 @@ func (b *Broker) Worker() error {
 }
 
 func (b *Broker) Close() error {
-	close(b.closed)
 	b.cancel()
 	// wait watch topic, watch delay, process finished
 	<-b.finished
@@ -112,11 +109,12 @@ func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, 
 
 func (b *Broker) watch(ctx context.Context) {
 	// watch topic,topic:DELAY, write to the buffer
+	closed := b.ctx.Done()
 	delayed := make(chan struct{})
 	go func() {
 		for {
 			select {
-			case <-b.closed:
+			case <-closed:
 				close(delayed)
 				return
 			default:

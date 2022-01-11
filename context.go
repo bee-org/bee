@@ -3,22 +3,23 @@ package bee
 import (
 	"context"
 	"encoding/json"
+	"github.com/bee-org/bee/codec"
 	"time"
 )
 
 type Context struct {
-	ctx  context.Context
-	name string
-	Body []byte
-	req  interface{}
+	ctx    context.Context
+	header *codec.Header
+	Body   []byte
+	req    interface{}
 }
 
-func NewContext(ctx context.Context, name string, body []byte) *Context {
-	return &Context{ctx: ctx, name: name, Body: body}
+func NewCtx(ctx context.Context, header *codec.Header, body []byte) *Context {
+	return &Context{ctx: ctx, header: header, Body: body}
 }
 
 func (c *Context) Name() string {
-	return c.name
+	return c.header.Name
 }
 
 func (c *Context) Parse(v interface{}) error {

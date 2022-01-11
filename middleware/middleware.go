@@ -1,5 +1,5 @@
 package middleware
 
-import "github.com/fanjindong/bee"
+import "github.com/bee-org/bee"
 
 type Middleware func(handler bee.Handler) bee.Handler

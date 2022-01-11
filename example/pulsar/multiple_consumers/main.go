@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/fanjindong/bee/broker"
-	"github.com/fanjindong/bee/example"
+	"github.com/bee-org/bee/broker"
+	"github.com/bee-org/bee/example"
 	"strings"
 	"sync"
 )

@@ -171,8 +171,8 @@ func TestBroker_Close(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := *b.(*Broker)
-			b.finished = make(chan struct{})
-			b.ctx, b.cancel = context.WithCancel(context.Background())
+			b.Broker = broker.NewBroker()
+			b.Register("sleep", example.SleepHandler)
 			b.config.Topic = "bee-close"
 			b.c.Del(context.Background(), b.config.Topic+":DELAY")
 			if err = b.Worker(); err != nil {

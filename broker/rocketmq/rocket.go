@@ -10,8 +10,6 @@ import (
 	"github.com/bee-org/bee"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/codec"
-	"github.com/bee-org/bee/middleware"
-	"sync"
 	"time"
 )
 
@@ -26,19 +24,21 @@ type Config struct {
 	InstanceName string
 	// Strategy Algorithm for message allocating between consumers. reference: https://github.com/apache/rocketmq-client-go/blob/master/consumer/strategy.go
 	AllocateStrategy func(string, string, []*primitive.MessageQueue, []string) []*primitive.MessageQueue
-	// The maximum number of times a message should be retried. default 16 times.
-	MaxReconsumeTimes int
+	// The maximum number of times the message is re-consumed. default 16 times.
+	RetryMaxReconsume uint8
 	// The Duration of backoff to apply between retries.
 	//Backoff time.Duration
 	Codec codec.Codec
+	// Define the concurrency number of worker processes, default runtime.NumCPU()*2
+	//Concurrency int
 }
 
 func NewBroker(config Config) (broker.IBroker, error) {
 	rlog.SetLogLevel("error")
-	b := &Broker{codec: &codec.LNBCodec{}, topic: config.Topic, router: map[string]bee.Handler{}}
-	if config.Codec != nil {
-		b.codec = config.Codec
+	if config.Codec == nil {
+		config.Codec = &codec.VND{}
 	}
+	b := &Broker{Broker: broker.NewBroker(), config: &config}
 
 	if config.ConsumerGroupName != "" {
 		opts := []consumer.Option{
@@ -60,8 +60,8 @@ func NewBroker(config Config) (broker.IBroker, error) {
 		if config.AllocateStrategy != nil {
 			opts = append(opts, consumer.WithStrategy(config.AllocateStrategy))
 		}
-		if config.MaxReconsumeTimes > 0 {
-			opts = append(opts, consumer.WithMaxReconsumeTimes(int32(config.MaxReconsumeTimes)))
+		if config.RetryMaxReconsume > 1 {
+			opts = append(opts, consumer.WithMaxReconsumeTimes(int32(config.RetryMaxReconsume-1)))
 		}
 		c, err := rocketmq.NewPushConsumer(opts...)
 		if err != nil {
@@ -91,34 +91,20 @@ func NewBroker(config Config) (broker.IBroker, error) {
 }
 
 type Broker struct {
-	mutex    sync.Mutex
-	topic    string
+	*broker.Broker
+	config *Config
+
 	producer rocketmq.Producer
 	consumer rocketmq.PushConsumer
-	router   map[string]bee.Handler
-	codec    codec.Codec
-	mws      []middleware.Middleware
-}
-
-func (b *Broker) Register(name string, handler bee.Handler, opts ...bee.Option) {
-	b.mutex.Lock()
-	//runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name()
-	b.router[name] = handler
-	b.mutex.Unlock()
-}
-
-func (b *Broker) Middleware(mws ...middleware.Middleware) {
-	b.mws = append(b.mws, mws...)
 }
 
 func (b *Broker) Worker() error {
-	for _, mw := range b.mws {
-		for name, handler := range b.router {
-			b.router[name] = mw(handler)
-		}
-	}
+	_ = b.Broker.Worker()
+	//if b.config.Concurrency < 1 {
+	//	b.config.Concurrency = runtime.NumCPU() * 2
+	//}
 	if b.consumer != nil {
-		if err := b.consumer.Subscribe(b.topic, consumer.MessageSelector{}, newConsumerHandler(b)); err != nil {
+		if err := b.consumer.Subscribe(b.config.Topic, consumer.MessageSelector{}, newConsumerHandler(b)); err != nil {
 			return err
 		}
 		if err := b.consumer.Start(); err != nil {
@@ -129,13 +115,15 @@ func (b *Broker) Worker() error {
 }
 
 func (b *Broker) Close() error {
+	b.Finish()
+	defer b.Broker.Close()
 	_ = b.producer.Shutdown()
 	return b.consumer.Shutdown()
 }
 
 func (b *Broker) handler(ctx context.Context, data []byte) error {
-	header, body := b.codec.Decode(data)
-	handler, ok := b.router[header.Name]
+	header, body := b.config.Codec.Decode(data)
+	handler, ok := b.Router(header.Name)
 	if !ok {
 		return nil
 	}
@@ -148,7 +136,7 @@ func (b *Broker) handler(ctx context.Context, data []byte) error {
 func newConsumerHandler(b *Broker) func(context.Context, ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 	return func(ctx context.Context, mes ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 		for _, me := range mes {
-			if err := b.handler(ctx, me.Body); err != nil {
+			if err := b.handler(b.Ctx(), me.Body); err != nil {
 				return consumer.ConsumeRetryLater, err
 			}
 		}
@@ -157,11 +145,11 @@ func newConsumerHandler(b *Broker) func(context.Context, ...*primitive.MessageEx
 }
 
 func (b *Broker) Send(ctx context.Context, name string, body interface{}) error {
-	data, err := b.codec.Encode(&codec.Header{Name: name}, body)
+	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, body)
 	if err != nil {
 		return err
 	}
-	msg := primitive.NewMessage(b.topic, data)
+	msg := primitive.NewMessage(b.config.Topic, data)
 	_, err = b.producer.SendSync(ctx, msg)
 	return err
 }
@@ -170,11 +158,11 @@ func (b *Broker) SendDelay(ctx context.Context, name string, body interface{}, d
 	if delay == 0 {
 		return b.Send(ctx, name, body)
 	}
-	data, err := b.codec.Encode(&codec.Header{Name: name}, body)
+	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, body)
 	if err != nil {
 		return err
 	}
-	msg := primitive.NewMessage(b.topic, data).WithDelayTimeLevel(duration2DelayTimeLevel(delay))
+	msg := primitive.NewMessage(b.config.Topic, data).WithDelayTimeLevel(duration2DelayTimeLevel(delay))
 	_, err = b.producer.SendSync(ctx, msg)
 	return err
 }

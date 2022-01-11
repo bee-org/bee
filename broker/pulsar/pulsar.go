@@ -7,8 +7,9 @@ import (
 	"github.com/bee-org/bee"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/codec"
-	"github.com/bee-org/bee/middleware"
 	"github.com/sirupsen/logrus"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -58,17 +59,17 @@ type Config struct {
 	RetryEnable bool
 	// Custom RetryTopic,DlqTopic,MaxReconsumeTimes
 	DLQ *DLQPolicy
-	// Define the number of worker processes, default 1
-	WorkerNumber int
+	// Define the concurrency number of worker processes, default runtime.NumCPU()*2
+	Concurrency int
 	// Custom codec
 	Codec codec.Codec
 }
 
 type Broker struct {
-	router   map[string]bee.Handler
-	codec    codec.Codec
-	mws      []middleware.Middleware
-	config   *Config
+	*broker.Broker
+	config *Config
+	buffer chan pulsar.ConsumerMessage
+
 	client   pulsar.Client
 	producer pulsar.Producer
 	consumer pulsar.Consumer
@@ -100,37 +101,23 @@ func NewBroker(config Config) (broker.IBroker, error) {
 	if config.Codec == nil {
 		config.Codec = &codec.LNBCodec{}
 	}
-	return &Broker{
-		router: make(map[string]bee.Handler),
-		codec:  config.Codec,
+	return &Broker{Broker: broker.NewBroker(),
 		config: &config, client: client, producer: p,
 	}, nil
 }
 
-func (b *Broker) Register(name string, handler bee.Handler, opts ...bee.Option) {
-	b.router[name] = handler
-}
-
-func (b *Broker) Middleware(mws ...middleware.Middleware) {
-	b.mws = append(b.mws, mws...)
-}
-
 func (b *Broker) Worker() error {
-	for _, mw := range b.mws {
-		for name, handler := range b.router {
-			b.router[name] = mw(handler)
-		}
+	_ = b.Broker.Worker()
+	if b.config.Concurrency < 1 {
+		b.config.Concurrency = runtime.NumCPU() * 2
 	}
-	if b.config.WorkerNumber <= 0 {
-		b.config.WorkerNumber = 1
-	}
-	channel := make(chan pulsar.ConsumerMessage, b.config.WorkerNumber*2)
+	b.buffer = make(chan pulsar.ConsumerMessage, b.config.Concurrency)
 	opt := pulsar.ConsumerOptions{
 		Topic:               b.config.Topic,
 		SubscriptionName:    b.config.SubscriptionName,
 		Type:                pulsar.Shared,
 		ReceiverQueueSize:   b.config.ReceiverQueueSize,
-		MessageChannel:      channel,
+		MessageChannel:      b.buffer,
 		RetryEnable:         b.config.RetryEnable,
 		NackRedeliveryDelay: b.config.NackRedeliveryDelay,
 	}
@@ -146,21 +133,22 @@ func (b *Broker) Worker() error {
 		return err
 	}
 	b.consumer = c
-	b.watch(channel)
+	b.watch()
 	return nil
 }
 
 func (b *Broker) Close() error {
 	if b.consumer != nil {
 		b.consumer.Close()
+		close(b.buffer)
 	}
 	b.producer.Close()
 	b.client.Close()
-	return nil
+	return b.Broker.Close()
 }
 
 func (b *Broker) Send(ctx context.Context, name string, data interface{}) error {
-	body, err := b.codec.Encode(&codec.Header{Name: name}, data)
+	body, err := b.config.Codec.Encode(&codec.Header{Name: name}, data)
 	if err != nil {
 		return err
 	}
@@ -172,7 +160,7 @@ func (b *Broker) SendDelay(ctx context.Context, name string, data interface{}, d
 	if delay == 0 {
 		return b.Send(ctx, name, data)
 	}
-	body, err := b.codec.Encode(&codec.Header{Name: name}, data)
+	body, err := b.config.Codec.Encode(&codec.Header{Name: name}, data)
 	if err != nil {
 		return err
 	}
@@ -180,27 +168,45 @@ func (b *Broker) SendDelay(ctx context.Context, name string, data interface{}, d
 	return err
 }
 
-func (b *Broker) watch(channel chan pulsar.ConsumerMessage) {
+func (b *Broker) watch() {
 	// Receive messages from channel. The channel returns a struct which contains message and the consumer from where
 	// the message was received. It's not necessary here since we have 1 single consumer, but the channel could be
 	// shared across multiple consumers as well
-	for i := 0; i < b.config.WorkerNumber; i++ {
-		go func() {
-			for cm := range channel {
-				msg := cm.Message
-				if err := b.handler(context.Background(), msg.Payload()); err != nil {
-					b.consumer.NackID(msg.ID())
-					continue
+	go func() {
+		seat := make(chan struct{}, b.config.Concurrency)
+		defer close(seat)
+		for i := 0; i < b.config.Concurrency; i++ {
+			seat <- struct{}{}
+		}
+		wg := sync.WaitGroup{}
+		for {
+			select {
+			case data, open := <-b.buffer:
+				if !open {
+					wg.Wait()
+					b.Finish()
+					return
 				}
-				b.consumer.AckID(msg.ID())
+				<-seat
+				wg.Add(1)
+				go func() {
+					msg := data.Message
+					if err := b.handler(b.Ctx(), msg.Payload()); err != nil {
+						b.consumer.NackID(msg.ID())
+						return
+					}
+					b.consumer.AckID(msg.ID())
+					wg.Done()
+					seat <- struct{}{}
+				}()
 			}
-		}()
-	}
+		}
+	}()
 }
 
 func (b *Broker) handler(ctx context.Context, data []byte) error {
-	header, body := b.codec.Decode(data)
-	handler, ok := b.router[header.Name]
+	header, body := b.config.Codec.Decode(data)
+	handler, ok := b.Router(header.Name)
 	if !ok {
 		return nil
 	}

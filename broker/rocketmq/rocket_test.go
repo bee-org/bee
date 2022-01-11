@@ -2,6 +2,7 @@ package rocketmq
 
 import (
 	"context"
+	"fmt"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/example"
 	"os"
@@ -24,7 +25,7 @@ func TestMain(m *testing.M) {
 		ConsumerGroupName: "BEE-consumer",
 		Order:             false,
 		BroadCasting:      false,
-		MaxReconsumeTimes: 2,
+		RetryMaxReconsume: 2,
 	})
 	if err != nil {
 		panic(err)
@@ -119,7 +120,7 @@ func TestRocketBroker_SendRetry(t *testing.T) {
 		wantErr    bool
 		wantResult int
 	}{
-		{args: args{ctx: ctx, data: "err0"}, wantResult: 2},
+		{args: args{ctx: ctx, data: fmt.Sprintf("err%d", time.Now().Unix())}, wantResult: 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -159,6 +160,25 @@ func TestRocketBroker_SendDelay(t *testing.T) {
 			got := <-example.DelayResult
 			if got.Before(want) || got.Sub(want).Seconds() > 1 {
 				t.Errorf("SendDelay() got delay = %v, want %v", got.Second(), want.Second())
+			}
+		})
+	}
+}
+
+func TestBroker_Close(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := b.(*Broker)
+			b.Broker = broker.NewBroker()
+			b.Worker()
+			if err := b.Close(); (err != nil) != tt.wantErr {
+				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

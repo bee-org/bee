@@ -36,11 +36,7 @@ type Config struct {
 type Broker struct {
 	*broker.Broker
 	config *Config
-
-	buffer   chan []byte
-	ctx      context.Context
-	cancel   context.CancelFunc
-	finished chan struct{}
+	buffer chan []byte
 
 	c *redis.Client
 }
@@ -60,13 +56,10 @@ func NewBroker(config Config) (broker.IBroker, error) {
 	if config.RetryBackoff == nil {
 		config.RetryBackoff = defaultRetryBackoff
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Broker{
 		Broker: broker.NewBroker(),
 		config: &config,
-		ctx:    ctx, cancel: cancel,
-		finished: make(chan struct{}),
-		c:        redis.NewClient(opt)}, nil
+		c:      redis.NewClient(opt)}, nil
 }
 
 func (b *Broker) Worker() error {
@@ -75,14 +68,7 @@ func (b *Broker) Worker() error {
 		b.config.Concurrency = runtime.NumCPU() * 2
 	}
 	b.buffer = make(chan []byte, b.config.Concurrency)
-	b.watch(b.ctx)
-	return nil
-}
-
-func (b *Broker) Close() error {
-	b.cancel()
-	// wait watch topic, watch delay, process finished
-	<-b.finished
+	b.watch(b.Ctx())
 	return nil
 }
 
@@ -109,7 +95,7 @@ func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, 
 
 func (b *Broker) watch(ctx context.Context) {
 	// watch topic,topic:DELAY, write to the buffer
-	closed := b.ctx.Done()
+	closed := ctx.Done()
 	delayed := make(chan struct{})
 	go func() {
 		for {
@@ -148,7 +134,7 @@ func (b *Broker) watch(ctx context.Context) {
 			case data, open := <-b.buffer:
 				if !open {
 					wg.Wait()
-					close(b.finished)
+					b.Finish()
 					return
 				}
 				<-seat

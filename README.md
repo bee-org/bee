@@ -2,7 +2,7 @@
 
 ![image](./images/favpng_honey.png)
 
-An asynchronous message execution framework based on the producer consumer model.
+An asynchronous task execution framework based on the producer consumer model.
 
 # Features
 

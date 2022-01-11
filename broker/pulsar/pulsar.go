@@ -190,13 +190,13 @@ func (b *Broker) watch() {
 				<-seat
 				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					msg := data.Message
 					if err := b.handler(b.Ctx(), msg.Payload()); err != nil {
 						b.consumer.NackID(msg.ID())
 						return
 					}
 					b.consumer.AckID(msg.ID())
-					wg.Done()
 					seat <- struct{}{}
 				}()
 			}

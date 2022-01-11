@@ -34,6 +34,7 @@ var CounterResult int64
 
 func CounterHandler(c *bee.Context) error {
 	atomic.AddInt64(&CounterResult, 1)
+	fmt.Println("counterHandler:", CounterResult)
 	return nil
 }
 
@@ -52,5 +53,6 @@ var DelayResult = make(chan time.Time, 1)
 
 func DelayHandler(c *bee.Context) error {
 	DelayResult <- time.Now()
+	fmt.Println("delayHandler:", time.Now().String())
 	return nil
 }

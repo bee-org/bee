@@ -167,7 +167,7 @@ func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
 	if header.Retry >= b.config.RetryMaxReconsume {
 		return b.sendDeadLetterQueue(header, body)
 	}
-	data, err := b.config.Codec.Encode(header, body)
+	data, err := b.config.Codec.EncodeBody(header, body)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
 }
 
 func (b *Broker) sendDeadLetterQueue(header *codec.Header, body []byte) error {
-	data, err := b.config.Codec.Encode(header, body)
+	data, err := b.config.Codec.EncodeBody(header, body)
 	if err != nil {
 		return err
 	}

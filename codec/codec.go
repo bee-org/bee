@@ -12,6 +12,7 @@ type Codec interface {
 
 type Encode interface {
 	Encode(header *Header, value interface{}) (data []byte, err error)
+	EncodeBody(header *Header, body []byte) (data []byte, err error)
 }
 type Decode interface {
 	Decode(data []byte) (header Header, body []byte)
@@ -22,35 +23,39 @@ type Header struct {
 	Retry uint8
 }
 
-//LNBCodec 长度域（Length）+ 名域(Name) + 值域（Value）
-type LNBCodec struct {
+//LNB 长度域（Length）+ 名域(Name) + 值域（Value）
+type LNB struct {
 }
 
-func (c *LNBCodec) Encode(header *Header, value interface{}) (data []byte, err error) {
-	var bodyBytes []byte
+func (c *LNB) Encode(header *Header, value interface{}) (data []byte, err error) {
+	var body []byte
 	//switch body.(type) {
 	//case uint, uint8, uint16, uint32, uint64, int, int8, int16, int32, int64, string, bool, complex64,complex128:
 	//	bodyBytes =
 	//}
 	if value != nil {
-		bodyBytes, err = json.Marshal(value)
+		body, err = json.Marshal(value)
 	}
 	if err != nil {
 		return nil, err
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, len(bodyBytes)+len(header.Name)+1))
+	return c.EncodeBody(header, body)
+}
+
+func (c *LNB) EncodeBody(header *Header, body []byte) (data []byte, err error) {
+	buf := bytes.NewBuffer(make([]byte, 0, len(body)+len(header.Name)+1))
 	//if err := binary.Write(buf, binary.BigEndian, uint8(len(name))); err != nil {
 	//	return nil, err
 	//}
 	buf.WriteByte(byte(uint8(len(header.Name))))
 	buf.WriteString(header.Name)
-	if len(bodyBytes) > 0 {
-		buf.Write(bodyBytes)
+	if len(body) > 0 {
+		buf.Write(body)
 	}
 	return buf.Bytes(), nil
 }
 
-func (c *LNBCodec) Decode(data []byte) (header Header, body []byte) {
+func (c *LNB) Decode(data []byte) (header Header, body []byte) {
 	length := int(uint8(data[0]))
 	if len(data) < length+1 {
 		return
@@ -72,15 +77,15 @@ type VND struct {
 func (c *VND) Encode(header *Header, value interface{}) (data []byte, err error) {
 	var body []byte
 	if value != nil {
-		if v, ok := value.([]byte); ok {
-			body = v
-		} else {
-			body, err = json.Marshal(value)
-		}
+		body, err = json.Marshal(value)
 	}
 	if err != nil {
 		return
 	}
+	return c.EncodeBody(header, body)
+}
+
+func (c *VND) EncodeBody(header *Header, body []byte) (data []byte, err error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(body)+len(header.Name)+3))
 	//if err := binary.Write(buf, binary.BigEndian, uint8(len(name))); err != nil {
 	//	return nil, err

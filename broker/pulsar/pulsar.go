@@ -99,7 +99,7 @@ func NewBroker(config Config) (broker.IBroker, error) {
 		return nil, err
 	}
 	if config.Codec == nil {
-		config.Codec = &codec.LNBCodec{}
+		config.Codec = &codec.VND{}
 	}
 	return &Broker{Broker: broker.NewBroker(),
 		config: &config, client: client, producer: p,

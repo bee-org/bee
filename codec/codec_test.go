@@ -7,7 +7,7 @@ import (
 )
 
 func TestLNBCodec(t *testing.T) {
-	c := LNBCodec{}
+	c := LNB{}
 	header := &Header{Name: "func1"}
 	value := map[string]string{"foo": "bar"}
 	data, err := c.Encode(header, value)
@@ -56,6 +56,70 @@ func TestVND(t *testing.T) {
 			}
 			if !reflect.DeepEqual(gotBody, wantBody) {
 				t.Errorf("Encode() gotBody = %v, want %v", gotBody, wantBody)
+			}
+		})
+	}
+}
+
+func TestLNB_EncodeBody(t *testing.T) {
+	type args struct {
+		header *Header
+		body   []byte
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{args: args{header: &Header{Name: "func1"}, body: []byte{}}},
+		{args: args{header: &Header{Name: "func2"}, body: []byte{1, 2, 3}}},
+	}
+	c := &LNB{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotData, err := c.EncodeBody(tt.args.header, tt.args.body)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("EncodeBody() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			gotHeader, gotBody := c.Decode(gotData)
+			if !reflect.DeepEqual(gotHeader, *tt.args.header) {
+				t.Errorf("EncodeBody() gotHeader = %v, want %v", gotHeader, tt.args.header)
+			}
+			if !reflect.DeepEqual(gotBody, tt.args.body) {
+				t.Errorf("EncodeBody() gotBody = %v, want %v", gotBody, tt.args.body)
+			}
+		})
+	}
+}
+
+func TestVND_EncodeBody(t *testing.T) {
+	type args struct {
+		header *Header
+		body   []byte
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{args: args{header: &Header{Name: "func1"}, body: []byte{}}},
+		{args: args{header: &Header{Name: "func2", Retry: 1}, body: []byte{1, 2, 3}}},
+	}
+	c := &VND{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotData, err := c.EncodeBody(tt.args.header, tt.args.body)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("EncodeBody() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			gotHeader, gotBody := c.Decode(gotData)
+			if !reflect.DeepEqual(gotHeader, *tt.args.header) {
+				t.Errorf("EncodeBody() gotHeader = %v, want %v", gotHeader, tt.args.header)
+			}
+			if !reflect.DeepEqual(gotBody, tt.args.body) {
+				t.Errorf("EncodeBody() gotBody = %v, want %v", gotBody, tt.args.body)
 			}
 		})
 	}

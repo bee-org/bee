@@ -56,6 +56,9 @@ func NewBroker(config Config) (broker.IBroker, error) {
 	if config.RetryBackoff == nil {
 		config.RetryBackoff = defaultRetryBackoff
 	}
+	if config.RetryMaxReconsume < 1 {
+		config.RetryMaxReconsume = 16
+	}
 	return &Broker{
 		Broker: broker.NewBroker(),
 		config: &config,

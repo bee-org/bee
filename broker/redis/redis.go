@@ -175,7 +175,7 @@ func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
 		return err
 	}
 	score := float64(time.Now().Add(b.config.RetryBackoff(header.Retry - 1)).UnixNano())
-	err = b.c.ZAdd(context.Background(), b.config.Topic+":DELAY", &redis.Z{Score: score, Member: data}).Err()
+	err = b.c.ZAdd(context.Background(), b.config.Topic+":Delay", &redis.Z{Score: score, Member: data}).Err()
 	return err
 }
 

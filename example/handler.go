@@ -56,3 +56,7 @@ func DelayHandler(c *bee.Context) error {
 	fmt.Println("delayHandler:", time.Now().String())
 	return nil
 }
+
+func PanicHandler(c *bee.Context) error {
+	panic("panic")
+}

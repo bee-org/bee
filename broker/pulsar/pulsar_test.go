@@ -19,14 +19,14 @@ var (
 func TestMain(m *testing.M) {
 	b, err = NewBroker(Config{
 		URL:              os.Getenv("PULSAR_URL"),
-		Topic:            "persistent://public/default/bee",
-		SubscriptionName: "sub-test",
-		AuthToken:        "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.bFEKUj29bpCRNPE5oKG5VxOFslkm5JKK4B-9zQrrpVIEy4_qvzu1AsyYB266jtuTPTzQVj8Kp8pffpTEg8GJuMQgt1VwDcgJ5k80pB5h6yjwnFqtP3TbLxvxdtIDAkQqyjbpstBD_57owJKS7l04YzpaiEJMTeNQqk7WIfYld5y7BFsSR7-8X6U6PoNk9E6S5R7XjLHvwquTFyUWdIHS-OeychhAKZPf415do5UliP42ZDQ1xfRxEJmwJD1vnzaZOQdP5y5zWFtkbhOACrI_ah2Tr9tMZcZvLgwt6T8ixaYhxG4hChjQQP97vZW65Wz1lcsnjl6Rvx5qwwu62iI89g",
+		Topic:            "persistent://ddmc/algo/bee",
+		SubscriptionName: "sub-bee",
+		AuthToken:        "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJwbGFuLWluZnJhc3RydWN0dXJlLWRhdGEifQ.uqV3c4h6Rn0BO5JJaUlAzCg-zeU6_pRq4Dpl_-hqd_Yxf6gS54oElogQycV183bKJ4fN5hE_6yXv-xtawMb2lpsn_0z7tpRU_uFy70cQbg1zHHjISvjkd7c_AipAjuAHjHnKi3NlS64BPSb8mHpwS2RN5qErTgg0PEUEf9AFs_-PPUXHfygR7AjYLMKtwu20XgSeUotWap4LEHZCv0WYPHJanSjusodQsxg8nWV7W2UhYo9uwBiWxUKeg6s5xPzyvwRgz_NiylRsua42EJaXKcp2IWy-K36NWlQKg4QZnYCNAxMZRdUarn-JbnuZUinsN_Wf6tZ6r-S2RxzonRmebQ",
 		RetryEnable:      true,
 		DLQ: &DLQPolicy{
 			MaxDeliveries:    3,
-			DeadLetterTopic:  "sub-test-RETRY",
-			RetryLetterTopic: "sub-test-DLQ",
+			DeadLetterTopic:  "persistent://ddmc/algo/bee-sub-bee-RETRY",
+			RetryLetterTopic: "persistent://ddmc/algo/bee-sub-bee-DLQ",
 		},
 		NackRedeliveryDelay: 1 * time.Second,
 	})
@@ -178,7 +178,10 @@ func TestBroker_Close(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			b := b.(*Broker)
 			b.Broker = broker.NewBroker()
-			b.Worker()
+			_ = b.Worker()
+			if err := b.Close(); (err != nil) != tt.wantErr {
+				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
+			}
 			if err := b.Close(); (err != nil) != tt.wantErr {
 				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
 			}

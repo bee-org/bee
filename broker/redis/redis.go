@@ -92,12 +92,12 @@ func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, 
 	if err != nil {
 		return err
 	}
-	err = b.c.ZAdd(ctx, b.config.Topic+":DELAY", &redis.Z{Score: float64(time.Now().Add(delay).UnixNano()), Member: data}).Err()
+	err = b.c.ZAdd(ctx, b.getDelayTopic(), &redis.Z{Score: float64(time.Now().Add(delay).UnixNano()), Member: data}).Err()
 	return err
 }
 
 func (b *Broker) watch(ctx context.Context) {
-	// watch topic,topic:DELAY, write to the buffer
+	// watch topic,topic:Delay, write to the buffer
 	closed := ctx.Done()
 	delayed := make(chan struct{})
 	go func() {
@@ -175,7 +175,7 @@ func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
 		return err
 	}
 	score := float64(time.Now().Add(b.config.RetryBackoff(header.Retry - 1)).UnixNano())
-	err = b.c.ZAdd(context.Background(), b.config.Topic+":Delay", &redis.Z{Score: score, Member: data}).Err()
+	err = b.c.ZAdd(context.Background(), b.getDelayTopic(), &redis.Z{Score: score, Member: data}).Err()
 	return err
 }
 
@@ -184,14 +184,14 @@ func (b *Broker) sendDeadLetterQueue(header *codec.Header, body []byte) error {
 	if err != nil {
 		return err
 	}
-	err = b.c.RPush(context.Background(), b.config.Topic+":DeadLetter", data).Err()
+	err = b.c.RPush(context.Background(), b.getDeadLetterTopic(), data).Err()
 	return err
 }
 
 func (b *Broker) getOneByDelayQueue(ctx context.Context) (err error) {
 	var items []string
 	var result []byte
-	key := b.config.Topic + ":DELAY"
+	key := b.getDelayTopic()
 	watchFunc := func(tx *redis.Tx) error {
 		now := time.Now().UTC().UnixNano()
 		// https://redis.io/commands/zrangebyscore
@@ -233,3 +233,6 @@ func (b *Broker) getOneByQueue(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (b *Broker) getDelayTopic() string      { return b.config.Topic + ":Delay" }
+func (b *Broker) getDeadLetterTopic() string { return b.config.Topic + ":DeadLetter" }

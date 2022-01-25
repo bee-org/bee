@@ -67,8 +67,9 @@ type Config struct {
 
 type Broker struct {
 	*broker.Broker
-	config *Config
-	buffer chan pulsar.ConsumerMessage
+	config    *Config
+	buffer    chan pulsar.ConsumerMessage
+	closeOnce sync.Once
 
 	client   pulsar.Client
 	producer pulsar.Producer
@@ -138,13 +139,17 @@ func (b *Broker) Worker() error {
 }
 
 func (b *Broker) Close() error {
-	if b.consumer != nil {
-		b.consumer.Close()
-		close(b.buffer)
-	}
-	b.producer.Close()
-	b.client.Close()
-	return b.Broker.Close()
+	var err error
+	b.closeOnce.Do(func() {
+		if b.consumer != nil {
+			b.consumer.Close()
+			close(b.buffer)
+		}
+		b.producer.Close()
+		b.client.Close()
+		err = b.Broker.Close()
+	})
+	return err
 }
 
 func (b *Broker) Send(ctx context.Context, name string, data interface{}) error {

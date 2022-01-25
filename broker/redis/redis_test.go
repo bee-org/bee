@@ -174,7 +174,7 @@ func TestBroker_Close(t *testing.T) {
 			b.Broker = broker.NewBroker()
 			b.Register("sleep", example.SleepHandler)
 			b.config.Topic = "bee-close"
-			b.c.Del(context.Background(), b.config.Topic+":DELAY")
+			b.c.Del(context.Background(), b.getDelayTopic())
 			if err = b.Worker(); err != nil {
 				panic(err)
 			}
@@ -185,7 +185,10 @@ func TestBroker_Close(t *testing.T) {
 			if err := b.Close(); (err != nil) != tt.wantErr {
 				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			got, _ := b.c.ZCount(context.Background(), b.config.Topic+":DELAY", "-inf", "+inf").Result()
+			if err := b.Close(); (err != nil) != tt.wantErr {
+				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			got, _ := b.c.ZCount(context.Background(), b.getDelayTopic(), "-inf", "+inf").Result()
 			if got != 3 {
 				t.Errorf("Close() got = %v, want %v", got, 3)
 			}

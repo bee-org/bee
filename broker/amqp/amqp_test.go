@@ -18,10 +18,11 @@ var (
 
 func TestMain(m *testing.M) {
 	b, err = NewBroker(Config{
-		URL:               os.Getenv("RABBIT_URL"),
-		Queue:             "bee",
-		RetryMaxReconsume: 3,
-		Concurrency:       1,
+		URL:                  os.Getenv("RABBIT_URL"),
+		Queue:                "bee",
+		RetryMaxReconsume:    3,
+		Concurrency:          1,
+		DelayedMessagePlugin: true,
 	})
 	if err != nil {
 		panic(err)

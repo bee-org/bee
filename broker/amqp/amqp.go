@@ -42,7 +42,10 @@ type Config struct {
 	ReInitDelay time.Duration
 	// When resending messages the server didn't confirm, default 5s
 	ResendDelay time.Duration
-
+	// Whether to enable "RabbitMQ Delayed Message Plugin"
+	// When enabled, delayed messages will be delivered by plug-in
+	// Need RabbitMQ Enabling the Plugin: https://github.com/rabbitmq/rabbitmq-delayed-message-exchange
+	DelayedMessagePlugin bool
 	// The maximum number of times the message is re-consumed. default 16 times.
 	RetryMaxReconsume uint8
 	//The Duration of backoff to apply between retries. default 2^retry*100ms

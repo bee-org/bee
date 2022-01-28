@@ -148,33 +148,24 @@ func (s *Session) handleReInit(conn *amqp.Connection) bool {
 // init will initialize channel & declare queue
 func (s *Session) init(conn *amqp.Connection) error {
 	ch, err := conn.Channel()
-
 	if err != nil {
 		return err
 	}
-
 	err = ch.Confirm(false)
-
 	if err != nil {
 		return err
 	}
-	if err = ch.ExchangeDeclare(s.config.Exchange, s.config.ExchangeType,
-		true,  // durable
-		false, // delete when complete
-		false, // internal
-		false, // noWait
-		nil,
-	); err != nil {
-		return err
+
+	if s.config.DelayedMessagePlugin {
+		if err = ch.ExchangeDeclare(s.config.Exchange, "x-delayed-message", true, false, false, false, amqp.Table{"x-delayed-type": s.config.ExchangeType}); err != nil {
+			return err
+		}
+	} else {
+		if err = ch.ExchangeDeclare(s.config.Exchange, s.config.ExchangeType, true, false, false, false, nil); err != nil {
+			return err
+		}
 	}
-	if _, err = ch.QueueDeclare(
-		s.config.Queue,
-		true,  // Durable
-		false, // Delete when unused
-		false, // Exclusive
-		false, // No-wait
-		nil,   // Arguments
-	); err != nil {
+	if _, err = ch.QueueDeclare(s.config.Queue, true, false, false, false, nil); err != nil {
 		return err
 	}
 	if err = ch.QueueBind(s.config.Queue, s.config.RoutingKey, s.config.Exchange, false, nil); err != nil {
@@ -256,7 +247,7 @@ func (s *Session) UnsafePush(ctx context.Context, data []byte, delayMs int64) er
 	default:
 	}
 	var routingKey = s.config.RoutingKey
-	if delayMs > 0 {
+	if delayMs > 0 && !s.config.DelayedMessagePlugin {
 		// It's necessary to redeclare the queue each time (to zero its TTL timer).
 		queueName := fmt.Sprintf("%s.%d.DELAY", s.config.Queue, delayMs)
 		declareQueueArgs := amqp.Table{
@@ -274,27 +265,15 @@ func (s *Session) UnsafePush(ctx context.Context, data []byte, delayMs int64) er
 			return err
 		}
 		routingKey = queueName
-		// Bind the queue
-		if err := s.channel.QueueBind(
-			queueName,         // name of the queue
-			routingKey,        // binding key
-			s.config.Exchange, // source exchange
-			false,             // noWait
-			nil,               // arguments
-		); err != nil {
+		if err := s.channel.QueueBind(queueName, routingKey, s.config.Exchange, false, nil); err != nil {
 			return err
 		}
 	}
-	return s.channel.Publish(
-		s.config.Exchange, // Exchange
-		routingKey,        // Routing key
-		false,             // Mandatory
-		false,             // Immediate
-		amqp.Publishing{
-			//ContentType: "text/plain",
-			Body: data,
-		},
-	)
+	msg := amqp.Publishing{Body: data}
+	if s.config.DelayedMessagePlugin {
+		msg.Headers = amqp.Table{"x-delay": delayMs}
+	}
+	return s.channel.Publish(s.config.Exchange, routingKey, false, false, msg)
 }
 
 // Stream will continuously put queue items on the channel.
@@ -305,15 +284,7 @@ func (s *Session) Stream() (<-chan amqp.Delivery, error) {
 	if !s.isReady {
 		return nil, errNotConnected
 	}
-	return s.channel.Consume(
-		s.config.Queue,
-		"",    // Consumer
-		false, // Auto-Ack
-		false, // Exclusive
-		false, // No-local
-		false, // No-Wait
-		nil,   // Args
-	)
+	return s.channel.Consume(s.config.Queue, "", false, false, false, false, nil)
 }
 
 // Close will cleanly shutdown the channel and connection.

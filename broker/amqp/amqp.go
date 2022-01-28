@@ -60,7 +60,7 @@ type Broker struct {
 	*broker.Broker
 	config *Config
 
-	c *Session
+	session *Session
 }
 
 var defaultRetryBackoff = func(retry uint8) time.Duration {
@@ -94,9 +94,9 @@ func NewBroker(config Config) (broker.IBroker, error) {
 		config.RetryMaxReconsume = 16
 	}
 	return &Broker{
-		Broker: broker.NewBroker(),
-		config: &config,
-		c:      NewSession(&config)}, nil
+		Broker:  broker.NewBroker(),
+		config:  &config,
+		session: NewSession(&config)}, nil
 }
 
 func (b *Broker) Worker() error {
@@ -113,7 +113,7 @@ func (b *Broker) Send(ctx context.Context, name string, value interface{}) error
 	if err != nil {
 		return err
 	}
-	err = b.c.Push(ctx, data, 0)
+	err = b.session.Push(ctx, data, 0)
 	return err
 }
 
@@ -125,18 +125,18 @@ func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, 
 	if err != nil {
 		return err
 	}
-	err = b.c.Push(ctx, data, delay.Milliseconds())
+	err = b.session.Push(ctx, data, delay.Milliseconds())
 	return err
 }
 
 func (b *Broker) Close() error {
-	_ = b.c.Close()
+	_ = b.session.Close()
 	return b.Broker.Close()
 }
 
 func (b *Broker) watch(ctx context.Context) {
 	// watch topic,topic:Delay, write to the buffer
-	consumer := NewConsumer(b.c)
+	consumer := NewConsumer(b.session)
 	buffer := consumer.GetBuffer()
 
 	go func() {
@@ -189,6 +189,6 @@ func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
 	if err != nil {
 		return err
 	}
-	err = b.c.Push(context.Background(), data, b.config.RetryBackoff(header.Retry-1).Milliseconds())
+	err = b.session.Push(context.Background(), data, b.config.RetryBackoff(header.Retry-1).Milliseconds())
 	return err
 }

@@ -7,6 +7,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -30,6 +31,7 @@ type Session struct {
 	notifyConfirm   chan amqp.Confirmation
 	isReady         bool
 	ready           chan struct{}
+	readyOnce       sync.Once
 }
 
 const (
@@ -174,7 +176,7 @@ func (s *Session) init(conn *amqp.Connection) error {
 
 	s.changeChannel(ch)
 	s.isReady = true
-	close(s.ready)
+	s.readyOnce.Do(func() { close(s.ready) })
 	s.logger.Println("Setup!")
 	return nil
 }

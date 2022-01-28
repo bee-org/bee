@@ -5,6 +5,7 @@ import (
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/example"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -181,5 +182,12 @@ func TestBroker_Close(t *testing.T) {
 				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestBroker_ReConnect(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		b.Send(ctx, "print", strconv.Itoa(i))
+		time.Sleep(1 * time.Second)
 	}
 }

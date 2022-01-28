@@ -2,13 +2,15 @@ package amqp
 
 import (
 	amqp "github.com/rabbitmq/amqp091-go"
+	"sync"
 	"time"
 )
 
 type Consumer struct {
-	s      *Session
-	buffer chan amqp.Delivery
-	ready  chan struct{}
+	s         *Session
+	buffer    chan amqp.Delivery
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 func NewConsumer(s *Session) *Consumer {
@@ -31,21 +33,30 @@ func (c *Consumer) watch() {
 			}
 			continue
 		}
-		close(c.ready)
-		for {
-			select {
-			case <-s.done:
-				close(c.buffer)
-				return
-			case <-s.notifyConnClose:
-				s.logger.Println("Connection closed. Reconnecting...")
+		c.readyOnce.Do(func() { close(c.ready) })
+		if c.delivery(delivery) {
+			break
+		}
+	}
+}
+
+func (c *Consumer) delivery(delivery <-chan amqp.Delivery) bool {
+	for {
+		select {
+		case <-c.s.done:
+			close(c.buffer)
+			return true
+		case <-c.s.notifyConnClose:
+			c.s.logger.Println("Connection closed. Reconnecting...")
+			return false
+		case <-c.s.notifyChanClose:
+			c.s.logger.Println("Channel closed. Re-running init...")
+			return false
+		case msg, open := <-delivery:
+			if !open {
 				break
-			case <-s.notifyChanClose:
-				s.logger.Println("Channel closed. Re-running init...")
-				break
-			case msg := <-delivery:
-				c.buffer <- msg
 			}
+			c.buffer <- msg
 		}
 	}
 }

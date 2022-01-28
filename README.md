@@ -16,6 +16,7 @@ supported middleware
 # Quick start
 
 Redis example:
+
 ```go
 package main
 
@@ -54,6 +55,7 @@ func main() {
 ```
 
 RabbitMQ example:
+
 ```go
 package main
 
@@ -90,3 +92,20 @@ func main() {
 }
 
 ```
+
+# Message Protocol
+
+```text
+bit:0-------8------16------24----------------n
+    ┌───────┬───────┬───────┬────────────────┐
+    │version│ retry │length │     name       │ header
+    ├───────┴───────┴───────┴────────────────┤
+    │                  body                  │
+    └────────────────────────────────────────┘
+```
+
+- version(8bit): Protocol Version number
+- retry(8bit): The number of times the message was consumed
+- length(8bit): The length of the function name that follows
+- name(n-bit): The function name
+- body(n-bit): Data required for function execution

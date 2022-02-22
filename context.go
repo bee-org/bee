@@ -33,6 +33,10 @@ func (c *Context) Req() interface{} {
 	return c.req
 }
 
+func (c *Context) Header() codec.Header {
+	return *c.header
+}
+
 func (c *Context) Deadline() (deadline time.Time, ok bool) {
 	return c.ctx.Deadline()
 }

@@ -3,10 +3,11 @@ package pulsar
 import (
 	"context"
 	"github.com/apache/pulsar-client-go/pulsar"
-	"github.com/apache/pulsar-client-go/pulsar/log"
+	plog "github.com/apache/pulsar-client-go/pulsar/log"
 	"github.com/bee-org/bee"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/codec"
+	"github.com/bee-org/bee/log"
 	"github.com/sirupsen/logrus"
 	"runtime"
 	"sync"
@@ -63,6 +64,8 @@ type Config struct {
 	Concurrency int
 	// Custom codec
 	Codec codec.Codec
+	// A Logger represents an active logging object that generates lines of output to an io.Writer
+	Logger log.ILogger
 }
 
 type Broker struct {
@@ -84,7 +87,7 @@ func NewBroker(config Config) (broker.IBroker, error) {
 		ConnectionTimeout:       config.ConnectionTimeout,
 		OperationTimeout:        config.OperationTimeout,
 		MaxConnectionsPerBroker: config.MaxConnectionsPerBroker,
-		Logger:                  log.NewLoggerWithLogrus(logger),
+		Logger:                  plog.NewLoggerWithLogrus(logger),
 	}
 	if config.AuthToken != "" {
 		opt.Authentication = pulsar.NewAuthenticationToken(config.AuthToken)
@@ -101,6 +104,9 @@ func NewBroker(config Config) (broker.IBroker, error) {
 	}
 	if config.Codec == nil {
 		config.Codec = &codec.VND{}
+	}
+	if config.Logger == nil {
+		config.Logger = log.NewDefaultLogger().SetLevel(log.InfoLevel)
 	}
 	return &Broker{Broker: broker.NewBroker(),
 		config: &config, client: client, producer: p,
@@ -152,24 +158,32 @@ func (b *Broker) Close() error {
 	return err
 }
 
-func (b *Broker) Send(ctx context.Context, name string, data interface{}) error {
-	body, err := b.config.Codec.Encode(&codec.Header{Name: name}, data)
+func (b *Broker) Send(ctx context.Context, name string, value interface{}) error {
+	body, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
+		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
 		return err
 	}
 	_, err = b.producer.Send(ctx, &pulsar.ProducerMessage{Payload: body})
+	if err != nil {
+		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
+	}
 	return err
 }
 
-func (b *Broker) SendDelay(ctx context.Context, name string, data interface{}, delay time.Duration) error {
+func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, delay time.Duration) error {
 	if delay == 0 {
-		return b.Send(ctx, name, data)
+		return b.Send(ctx, name, value)
 	}
-	body, err := b.config.Codec.Encode(&codec.Header{Name: name}, data)
+	body, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
+		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
 		return err
 	}
 	_, err = b.producer.Send(ctx, &pulsar.ProducerMessage{Payload: body, DeliverAfter: delay})
+	if err != nil {
+		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
+	}
 	return err
 }
 
@@ -213,6 +227,7 @@ func (b *Broker) handler(ctx context.Context, data []byte) error {
 	header, body := b.config.Codec.Decode(data)
 	handler, ok := b.Router(header.Name)
 	if !ok {
+		b.config.Logger.Warningf("process unknown name: %s", header.Name)
 		return nil
 	}
 	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {

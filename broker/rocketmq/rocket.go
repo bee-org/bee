@@ -10,6 +10,7 @@ import (
 	"github.com/bee-org/bee"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/codec"
+	"github.com/bee-org/bee/log"
 	"time"
 )
 
@@ -31,12 +32,17 @@ type Config struct {
 	Codec codec.Codec
 	// Define the concurrency number of worker processes, default runtime.NumCPU()*2
 	//Concurrency int
+	// A Logger represents an active logging object that generates lines of output to an io.Writer
+	Logger log.ILogger
 }
 
 func NewBroker(config Config) (broker.IBroker, error) {
 	rlog.SetLogLevel("error")
 	if config.Codec == nil {
 		config.Codec = &codec.VND{}
+	}
+	if config.Logger == nil {
+		config.Logger = log.NewDefaultLogger().SetLevel(log.InfoLevel)
 	}
 	b := &Broker{Broker: broker.NewBroker(), config: &config}
 
@@ -116,7 +122,7 @@ func (b *Broker) Worker() error {
 
 func (b *Broker) Close() error {
 	b.Finish()
-	defer b.Broker.Close()
+	defer func() { _ = b.Broker.Close() }()
 	_ = b.producer.Shutdown()
 	return b.consumer.Shutdown()
 }
@@ -125,6 +131,7 @@ func (b *Broker) handler(ctx context.Context, data []byte) error {
 	header, body := b.config.Codec.Decode(data)
 	handler, ok := b.Router(header.Name)
 	if !ok {
+		b.config.Logger.Warningf("process unknown name: %s", header.Name)
 		return nil
 	}
 	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {
@@ -144,26 +151,34 @@ func newConsumerHandler(b *Broker) func(context.Context, ...*primitive.MessageEx
 	}
 }
 
-func (b *Broker) Send(ctx context.Context, name string, body interface{}) error {
-	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, body)
+func (b *Broker) Send(ctx context.Context, name string, value interface{}) error {
+	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
+		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
 		return err
 	}
 	msg := primitive.NewMessage(b.config.Topic, data)
 	_, err = b.producer.SendSync(ctx, msg)
+	if err != nil {
+		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
+	}
 	return err
 }
 
-func (b *Broker) SendDelay(ctx context.Context, name string, body interface{}, delay time.Duration) error {
+func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, delay time.Duration) error {
 	if delay == 0 {
-		return b.Send(ctx, name, body)
+		return b.Send(ctx, name, value)
 	}
-	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, body)
+	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
+		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
 		return err
 	}
 	msg := primitive.NewMessage(b.config.Topic, data).WithDelayTimeLevel(duration2DelayTimeLevel(delay))
 	_, err = b.producer.SendSync(ctx, msg)
+	if err != nil {
+		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
+	}
 	return err
 }
 

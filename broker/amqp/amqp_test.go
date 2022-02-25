@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/example"
+	"github.com/bee-org/bee/log"
 	"os"
 	"strconv"
 	"sync"
@@ -24,6 +25,7 @@ func TestMain(m *testing.M) {
 		RetryMaxReconsume:    3,
 		Concurrency:          1,
 		DelayedMessagePlugin: true,
+		Logger:               log.NewDefaultLogger(),
 	})
 	if err != nil {
 		panic(err)
@@ -187,7 +189,9 @@ func TestBroker_Close(t *testing.T) {
 
 func TestBroker_ReConnect(t *testing.T) {
 	for i := 0; i < 100; i++ {
-		b.Send(ctx, "print", strconv.Itoa(i))
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		_ = b.Send(ctx, "print", strconv.Itoa(i))
 		time.Sleep(1 * time.Second)
+		cancel()
 	}
 }

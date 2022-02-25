@@ -25,7 +25,7 @@ func (c *Consumer) watch() {
 	for {
 		delivery, err := s.Stream()
 		if err != nil {
-			s.logger.Println("Stream failed. Retrying...")
+			s.config.Logger.Warningln("Stream failed. Retrying...")
 			select {
 			case <-s.done:
 				return
@@ -47,10 +47,10 @@ func (c *Consumer) delivery(delivery <-chan amqp.Delivery) bool {
 			close(c.buffer)
 			return true
 		case <-c.s.notifyConnClose:
-			c.s.logger.Println("Connection closed. Reconnecting...")
+			c.s.config.Logger.Warningln("Connection closed. Reconnecting...")
 			return false
 		case <-c.s.notifyChanClose:
-			c.s.logger.Println("Channel closed. Re-running init...")
+			c.s.config.Logger.Warningln("Channel closed. Rerunning init...")
 			return false
 		case msg, open := <-delivery:
 			if !open {

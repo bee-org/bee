@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/example"
+	"github.com/bee-org/bee/log"
 	"os"
 	"sync"
 	"testing"
@@ -22,6 +23,7 @@ func TestMain(m *testing.M) {
 		Topic:             "bee",
 		RetryMaxReconsume: 3,
 		Concurrency:       1,
+		Logger:            log.NewDefaultLogger(),
 	})
 	if err != nil {
 		panic(err)

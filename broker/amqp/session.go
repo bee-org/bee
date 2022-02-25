@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"log"
-	"os"
 	"sync"
 	"time"
 )
@@ -22,7 +20,6 @@ import (
 // Stop & restart RabbitMQ to see how the queue reacts.
 type Session struct {
 	config          *Config
-	logger          *log.Logger
 	connection      *amqp.Connection
 	channel         *amqp.Channel
 	done            chan bool
@@ -63,7 +60,6 @@ func NewSession(config *Config) *Session {
 	}
 	session := Session{
 		config: config,
-		logger: log.New(os.Stdout, "", log.LstdFlags),
 		done:   make(chan bool),
 		ready:  make(chan struct{}),
 	}
@@ -77,12 +73,12 @@ func NewSession(config *Config) *Session {
 func (s *Session) handleReconnect() {
 	for {
 		s.isReady = false
-		s.logger.Println("Attempting to connect")
+		s.config.Logger.Warningln("Attempting to connect")
 
 		conn, err := s.connect()
 
 		if err != nil {
-			s.logger.Println("Failed to connect. Retrying...")
+			s.config.Logger.Warningln("Failed to connect. Retrying...")
 
 			select {
 			case <-s.done:
@@ -112,7 +108,7 @@ func (s *Session) connect() (*amqp.Connection, error) {
 	}
 
 	s.changeConnection(conn)
-	s.logger.Println("Connected!")
+	s.config.Logger.Infoln("Connected!")
 	return conn, nil
 }
 
@@ -125,7 +121,7 @@ func (s *Session) handleReInit(conn *amqp.Connection) bool {
 		err := s.init(conn)
 
 		if err != nil {
-			s.logger.Println("Failed to initialize channel. Retrying...")
+			s.config.Logger.Warningln("Failed to initialize channel. Retrying...")
 
 			select {
 			case <-s.done:
@@ -139,10 +135,10 @@ func (s *Session) handleReInit(conn *amqp.Connection) bool {
 		case <-s.done:
 			return true
 		case <-s.notifyConnClose:
-			s.logger.Println("Connection closed. Reconnecting...")
+			s.config.Logger.Warningln("Connection closed. Reconnecting...")
 			return false
 		case <-s.notifyChanClose:
-			s.logger.Println("Channel closed. Re-running init...")
+			s.config.Logger.Warningln("Channel closed. Rerunning init...")
 		}
 	}
 }
@@ -177,7 +173,7 @@ func (s *Session) init(conn *amqp.Connection) error {
 	s.changeChannel(ch)
 	s.isReady = true
 	s.readyOnce.Do(func() { close(s.ready) })
-	s.logger.Println("Setup!")
+	s.config.Logger.Infoln("Setup!")
 	return nil
 }
 
@@ -211,7 +207,7 @@ func (s *Session) Push(ctx context.Context, data []byte, delayMs int64) error {
 	for {
 		err := s.UnsafePush(ctx, data, delayMs)
 		if err != nil {
-			s.logger.Println("Push failed. Retrying...")
+			s.config.Logger.Debugln("Push failed. Retrying...")
 			select {
 			case <-s.done:
 				return errShutdown
@@ -224,14 +220,14 @@ func (s *Session) Push(ctx context.Context, data []byte, delayMs int64) error {
 		select {
 		case confirm := <-s.notifyConfirm:
 			if confirm.Ack {
-				s.logger.Println("Push confirmed!")
+				s.config.Logger.Debugln("Push confirmed!")
 				return nil
 			}
 		case <-time.After(s.config.ResendDelay):
 		case <-ctx.Done():
 			return err
 		}
-		s.logger.Println("Push didn't confirm. Retrying...")
+		s.config.Logger.Debugln("Push didn't confirm. Retrying...")
 	}
 }
 
@@ -289,7 +285,7 @@ func (s *Session) Stream() (<-chan amqp.Delivery, error) {
 	return s.channel.Consume(s.config.Queue, "", false, false, false, false, nil)
 }
 
-// Close will cleanly shutdown the channel and connection.
+// Close will cleanly shut down the channel and connection.
 func (s *Session) Close() error {
 	if !s.isReady {
 		return errAlreadyClosed

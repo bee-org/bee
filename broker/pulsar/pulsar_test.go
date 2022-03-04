@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/example"
+	"github.com/bee-org/bee/log"
 	"os"
 	"sync"
 	"testing"
@@ -29,6 +30,7 @@ func TestMain(m *testing.M) {
 			RetryLetterTopic: "persistent://ddmc/algo/bee-sub-bee-DLQ",
 		},
 		NackRedeliveryDelay: 1 * time.Second,
+		Logger:              log.NewDefaultLogger(),
 	})
 	if err != nil {
 		panic(err)

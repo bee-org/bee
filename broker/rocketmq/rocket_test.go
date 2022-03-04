@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/example"
+	"github.com/bee-org/bee/log"
 	"os"
 	"strings"
 	"testing"
@@ -26,6 +27,7 @@ func TestMain(m *testing.M) {
 		Order:             false,
 		BroadCasting:      false,
 		RetryMaxReconsume: 2,
+		Logger:            log.NewDefaultLogger(),
 	})
 	if err != nil {
 		panic(err)
@@ -176,7 +178,7 @@ func TestBroker_Close(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			b := b.(*Broker)
 			b.Broker = broker.NewBroker()
-			b.Worker()
+			_ = b.Worker()
 			if err := b.Close(); (err != nil) != tt.wantErr {
 				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
 			}

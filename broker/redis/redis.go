@@ -5,6 +5,7 @@ import (
 	"github.com/bee-org/bee"
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/codec"
+	"github.com/bee-org/bee/log"
 	"github.com/go-redis/redis/v8"
 	"math"
 	"runtime"
@@ -31,6 +32,8 @@ type Config struct {
 	Codec codec.Codec
 	// Define the concurrency number of worker processes, default runtime.NumCPU()*2
 	Concurrency int
+	// A Logger represents an active logging object that generates lines of output to an io.Writer
+	Logger log.ILogger
 }
 
 type Broker struct {
@@ -59,6 +62,9 @@ func NewBroker(config Config) (broker.IBroker, error) {
 	if config.RetryMaxReconsume < 1 {
 		config.RetryMaxReconsume = 16
 	}
+	if config.Logger == nil {
+		config.Logger = log.NewDefaultLogger().SetLevel(log.InfoLevel)
+	}
 	return &Broker{
 		Broker: broker.NewBroker(),
 		config: &config,
@@ -78,9 +84,13 @@ func (b *Broker) Worker() error {
 func (b *Broker) Send(ctx context.Context, name string, value interface{}) error {
 	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
+		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
 		return err
 	}
 	err = b.c.RPush(ctx, b.config.Topic, data).Err()
+	if err != nil {
+		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
+	}
 	return err
 }
 
@@ -90,9 +100,13 @@ func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, 
 	}
 	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
 	if err != nil {
+		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
 		return err
 	}
 	err = b.c.ZAdd(ctx, b.getDelayTopic(), &redis.Z{Score: float64(time.Now().Add(delay).UnixNano()), Member: data}).Err()
+	if err != nil {
+		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
+	}
 	return err
 }
 
@@ -156,6 +170,7 @@ func (b *Broker) process(ctx context.Context, data []byte) error {
 	header, body := b.config.Codec.Decode(data)
 	handler, ok := b.Router(header.Name)
 	if !ok {
+		b.config.Logger.Warningf("process unknown name: %s", header.Name)
 		return nil
 	}
 	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {
@@ -176,6 +191,9 @@ func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
 	}
 	score := float64(time.Now().Add(b.config.RetryBackoff(header.Retry - 1)).UnixNano())
 	err = b.c.ZAdd(context.Background(), b.getDelayTopic(), &redis.Z{Score: score, Member: data}).Err()
+	if err != nil {
+		b.config.Logger.Errorf("sendRetryQueue(header=%v, body=%v), error: %v", header, body, err)
+	}
 	return err
 }
 
@@ -185,6 +203,9 @@ func (b *Broker) sendDeadLetterQueue(header *codec.Header, body []byte) error {
 		return err
 	}
 	err = b.c.RPush(context.Background(), b.getDeadLetterTopic(), data).Err()
+	if err != nil {
+		b.config.Logger.Errorf("sendDeadLetterQueue(header=%v, body=%v), error: %v", header, body, err)
+	}
 	return err
 }
 

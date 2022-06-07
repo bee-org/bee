@@ -2,124 +2,57 @@ package codec
 
 import (
 	"encoding/json"
+	"github.com/bee-org/bee/message"
 	"reflect"
 	"testing"
 )
 
-func TestLNBCodec(t *testing.T) {
-	c := LNB{}
-	header := &Header{Name: "func1"}
-	value := map[string]string{"foo": "bar"}
-	data, err := c.Encode(header, value)
-	if err != nil {
-		panic(err)
-	}
-	gotHeader, gotBody := c.Decode(data)
-	if reflect.DeepEqual(header, gotHeader) {
-		t.Error(header, gotHeader)
-	}
-	gotM := make(map[string]string)
-	if err := json.Unmarshal(gotBody, &gotM); err != nil {
-		t.Error(gotBody, err)
-	}
-	if !reflect.DeepEqual(gotM, value) {
-		t.Error(value, gotM)
-	}
-}
-
 func TestVND(t *testing.T) {
 	type args struct {
-		header *Header
-		value  interface{}
+		m message.Message
 	}
 	tests := []struct {
 		name    string
 		args    args
 		wantErr bool
 	}{
-		{args: args{header: &Header{Name: "func1"}, value: 1}},
-		{args: args{header: &Header{Name: "func2"}, value: "a"}},
-		{args: args{header: &Header{Name: "func3"}, value: map[string]interface{}{"a": 1, "b": "2"}}},
+		{args: args{m: message.NewMsg("func1", nil)}},
+		{args: args{m: message.NewMsg("func1", 1)}},
+		{args: args{m: message.NewMsg("func2", "a").SetRetryCount(1)}},
+		{args: args{m: message.NewMsg("func3", map[string]interface{}{"a": 1, "b": "2"})}},
+		{args: args{m: message.NewMsg("func1", nil).SetRetryCount(1)}},
+		{args: args{m: message.NewMsg("func1", nil).SetRetryCount(1).SetBody([]byte{1})}},
+		{args: args{m: message.NewMsg("func1", nil).SetBody([]byte{})}},
+		{args: args{m: message.NewMsg("func2", nil).SetBody([]byte{1, 2, 3})}},
 	}
-	c := &VND{}
+	c := &VNDCodec{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotData, err := c.Encode(tt.args.header, tt.args.value)
+			gotData, err := c.Encode(tt.args.m)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Encode() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			gotHeader, gotBody := c.Decode(gotData)
-			wantBody, _ := json.Marshal(tt.args.value)
-			if !reflect.DeepEqual(&gotHeader, tt.args.header) {
-				t.Errorf("Encode() gotHeader = %v, want %v", gotHeader, tt.args.header)
+			got, _ := c.Decode(gotData)
+			if value := tt.args.m.GetValue(); value != nil {
+				body, _ := json.Marshal(value)
+				tt.args.m.SetBody(body)
 			}
-			if !reflect.DeepEqual(gotBody, wantBody) {
-				t.Errorf("Encode() gotBody = %v, want %v", gotBody, wantBody)
+			if tt.args.m.GetBody() == nil {
+				tt.args.m.SetBody([]byte{})
 			}
-		})
-	}
-}
 
-func TestLNB_EncodeBody(t *testing.T) {
-	type args struct {
-		header *Header
-		body   []byte
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{args: args{header: &Header{Name: "func1"}, body: []byte{}}},
-		{args: args{header: &Header{Name: "func2"}, body: []byte{1, 2, 3}}},
-	}
-	c := &LNB{}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotData, err := c.EncodeBody(tt.args.header, tt.args.body)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("EncodeBody() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			if !reflect.DeepEqual(got.GetName(), tt.args.m.GetName()) {
+				t.Errorf("Encode() got.GetName = %v, want.GetName %v", got.GetName(), tt.args.m.GetName())
 			}
-			gotHeader, gotBody := c.Decode(gotData)
-			if !reflect.DeepEqual(gotHeader, *tt.args.header) {
-				t.Errorf("EncodeBody() gotHeader = %v, want %v", gotHeader, tt.args.header)
+			if !reflect.DeepEqual(got.GetVersion(), tt.args.m.GetVersion()) {
+				t.Errorf("Encode() got.GetVersion = %v, want.GetVersion %v", got.GetVersion(), tt.args.m.GetVersion())
 			}
-			if !reflect.DeepEqual(gotBody, tt.args.body) {
-				t.Errorf("EncodeBody() gotBody = %v, want %v", gotBody, tt.args.body)
+			if !reflect.DeepEqual(got.GetRetryCount(), tt.args.m.GetRetryCount()) {
+				t.Errorf("Encode() got.GetRetryCount = %v, want.GetRetryCount %v", got.GetRetryCount(), tt.args.m.GetRetryCount())
 			}
-		})
-	}
-}
-
-func TestVND_EncodeBody(t *testing.T) {
-	type args struct {
-		header *Header
-		body   []byte
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{args: args{header: &Header{Name: "func1"}, body: []byte{}}},
-		{args: args{header: &Header{Name: "func2", Retry: 1}, body: []byte{1, 2, 3}}},
-	}
-	c := &VND{}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotData, err := c.EncodeBody(tt.args.header, tt.args.body)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("EncodeBody() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			gotHeader, gotBody := c.Decode(gotData)
-			if !reflect.DeepEqual(gotHeader, *tt.args.header) {
-				t.Errorf("EncodeBody() gotHeader = %v, want %v", gotHeader, tt.args.header)
-			}
-			if !reflect.DeepEqual(gotBody, tt.args.body) {
-				t.Errorf("EncodeBody() gotBody = %v, want %v", gotBody, tt.args.body)
+			if !reflect.DeepEqual(got.GetBody(), tt.args.m.GetBody()) {
+				t.Errorf("Encode() got.GetBody = %v, want.GetBody %v", got.GetBody(), tt.args.m.GetBody())
 			}
 		})
 	}

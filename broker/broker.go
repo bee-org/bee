@@ -18,7 +18,7 @@ type IBroker interface {
 	Close() error
 
 	// Send Produce the message to execute the handler function asynchronously
-	Send(ctx context.Context, name string, data interface{}) error
+	Send(ctx context.Context, name string, value interface{}) error
 	// SendDelay Produce the delay message to execute the handler function asynchronously
 	SendDelay(ctx context.Context, name string, body interface{}, delay time.Duration) error
 }

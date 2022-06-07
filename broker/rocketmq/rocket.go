@@ -11,6 +11,7 @@ import (
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/codec"
 	"github.com/bee-org/bee/log"
+	"github.com/bee-org/bee/message"
 	"time"
 )
 
@@ -39,7 +40,7 @@ type Config struct {
 func NewBroker(config Config) (broker.IBroker, error) {
 	rlog.SetLogLevel("error")
 	if config.Codec == nil {
-		config.Codec = &codec.VND{}
+		config.Codec = &codec.VNDCodec{}
 	}
 	if config.Logger == nil {
 		config.Logger = log.NewDefaultLogger().SetLevel(log.InfoLevel)
@@ -128,13 +129,17 @@ func (b *Broker) Close() error {
 }
 
 func (b *Broker) handler(ctx context.Context, data []byte) error {
-	header, body := b.config.Codec.Decode(data)
-	handler, ok := b.Router(header.Name)
+	msg, err := b.config.Codec.Decode(data)
+	if err != nil {
+		b.config.Logger.Errorf("process unknown data: %s", err)
+		return err
+	}
+	handler, ok := b.Router(msg.GetName())
 	if !ok {
-		b.config.Logger.Warningf("process unknown name: %s", header.Name)
+		b.config.Logger.Warningf("process unknown name: %s", msg.GetName())
 		return nil
 	}
-	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {
+	if err := handler(bee.NewCtx(ctx, msg)); err != nil {
 		return err
 	}
 	return nil
@@ -152,7 +157,7 @@ func newConsumerHandler(b *Broker) func(context.Context, ...*primitive.MessageEx
 }
 
 func (b *Broker) Send(ctx context.Context, name string, value interface{}) error {
-	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
+	data, err := b.config.Codec.Encode(message.NewMsg(name, value))
 	if err != nil {
 		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
 		return err
@@ -169,7 +174,7 @@ func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, 
 	if delay == 0 {
 		return b.Send(ctx, name, value)
 	}
-	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
+	data, err := b.config.Codec.Encode(message.NewMsg(name, value))
 	if err != nil {
 		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
 		return err

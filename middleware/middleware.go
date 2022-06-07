@@ -8,6 +8,7 @@ import (
 
 type Middleware func(handler bee.Handler) bee.Handler
 
+//RecoverPanic Catch the Panic and return an error
 func RecoverPanic() Middleware {
 	return func(handler bee.Handler) bee.Handler {
 		return func(ctx *bee.Context) (err error) {

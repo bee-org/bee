@@ -7,6 +7,7 @@ import (
 	"github.com/bee-org/bee/broker"
 	"github.com/bee-org/bee/codec"
 	"github.com/bee-org/bee/log"
+	"github.com/bee-org/bee/message"
 	"github.com/pkg/errors"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"math"
@@ -88,7 +89,7 @@ func NewBroker(config Config) (broker.IBroker, error) {
 		config.RoutingKey = config.Queue
 	}
 	if config.Codec == nil {
-		config.Codec = &codec.VND{}
+		config.Codec = &codec.VNDCodec{}
 	}
 	if config.RetryBackoff == nil {
 		config.RetryBackoff = defaultRetryBackoff
@@ -115,7 +116,7 @@ func (b *Broker) Worker() error {
 }
 
 func (b *Broker) Send(ctx context.Context, name string, value interface{}) error {
-	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
+	data, err := b.config.Codec.Encode(message.NewMsg(name, value))
 	if err != nil {
 		b.config.Logger.Errorf("Send(name=%s, value=%v), error: %v", name, value, err)
 		return err
@@ -131,7 +132,7 @@ func (b *Broker) SendDelay(ctx context.Context, name string, value interface{}, 
 	if delay == 0 {
 		return b.Send(ctx, name, value)
 	}
-	data, err := b.config.Codec.Encode(&codec.Header{Name: name}, value)
+	data, err := b.config.Codec.Encode(message.NewMsg(name, value))
 	if err != nil {
 		b.config.Logger.Errorf("SendDelay(name=%s, value=%v, delay=%v), error: %v", name, value, delay.String(), err)
 		return err
@@ -182,31 +183,35 @@ func (b *Broker) watch(ctx context.Context) {
 }
 
 func (b *Broker) process(ctx context.Context, data []byte) error {
-	header, body := b.config.Codec.Decode(data)
-	handler, ok := b.Router(header.Name)
+	msg, err := b.config.Codec.Decode(data)
+	if err != nil {
+		b.config.Logger.Errorf("process unknown data: %s", err)
+		return err
+	}
+	handler, ok := b.Router(msg.GetName())
 	if !ok {
-		b.config.Logger.Warningf("process unknown name: %s", header.Name)
+		b.config.Logger.Warningf("process unknown name: %s", msg.GetName())
 		return nil
 	}
-	if err := handler(bee.NewCtx(ctx, &header, body)); err != nil {
-		_ = b.sendRetryQueue(&header, body)
+	if err := handler(bee.NewCtx(ctx, msg)); err != nil {
+		_ = b.sendRetryQueue(msg)
 		return err
 	}
 	return nil
 }
 
-func (b *Broker) sendRetryQueue(header *codec.Header, body []byte) error {
-	header.Retry++
-	if header.Retry >= b.config.RetryMaxReconsume {
+func (b *Broker) sendRetryQueue(msg message.Message) error {
+	rc := msg.IncrRetryCount()
+	if rc >= b.config.RetryMaxReconsume {
 		return nil
 	}
-	data, err := b.config.Codec.EncodeBody(header, body)
+	data, err := b.config.Codec.Encode(msg)
 	if err != nil {
 		return err
 	}
-	err = b.session.Push(context.Background(), data, b.config.RetryBackoff(header.Retry-1).Milliseconds())
+	err = b.session.Push(context.Background(), data, b.config.RetryBackoff(rc-1).Milliseconds())
 	if err != nil {
-		b.config.Logger.Errorf("sendRetryQueue(header=%v, body=%v), error: %v", header, body, err)
+		b.config.Logger.Errorf("sendRetryQueue(RetryCount=%v, Name=%s, body=%v), error: %v", rc, msg.GetName(), msg.GetBody(), err)
 	}
 	return err
 }

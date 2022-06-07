@@ -3,29 +3,28 @@ package bee
 import (
 	"context"
 	"encoding/json"
-	"github.com/bee-org/bee/codec"
+	"github.com/bee-org/bee/message"
 	"time"
 )
 
 type Context struct {
-	ctx    context.Context
-	header *codec.Header
-	Body   []byte
-	req    interface{}
+	ctx context.Context
+	msg message.Message
+	req interface{}
 }
 
-func NewCtx(ctx context.Context, header *codec.Header, body []byte) *Context {
-	return &Context{ctx: ctx, header: header, Body: body}
+func NewCtx(ctx context.Context, m message.Message) *Context {
+	return &Context{ctx: ctx, msg: m}
 }
 
 func (c *Context) Name() string {
-	return c.header.Name
+	return c.msg.GetName()
 }
 
 func (c *Context) Parse(v interface{}) error {
 	// Recording request parameters
 	defer func() { c.req = v }()
-	return json.Unmarshal(c.Body, v)
+	return json.Unmarshal(c.msg.GetBody(), v)
 }
 
 // Req must be called after the Parse, Return the req recorded at parsing time.
@@ -33,8 +32,8 @@ func (c *Context) Req() interface{} {
 	return c.req
 }
 
-func (c *Context) Header() codec.Header {
-	return *c.header
+func (c *Context) Message() message.Message {
+	return c.msg
 }
 
 func (c *Context) Deadline() (deadline time.Time, ok bool) {

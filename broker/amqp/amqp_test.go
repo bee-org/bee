@@ -164,6 +164,15 @@ func TestPulSarBroker_SendDelay(t *testing.T) {
 	}
 }
 
+func TestBroker_ReConnect(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		_ = b.Send(ctx, "print", strconv.Itoa(i))
+		time.Sleep(1 * time.Second)
+		cancel()
+	}
+}
+
 func TestBroker_Close(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -184,14 +193,5 @@ func TestBroker_Close(t *testing.T) {
 				t.Errorf("Close() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestBroker_ReConnect(t *testing.T) {
-	for i := 0; i < 100; i++ {
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		_ = b.Send(ctx, "print", strconv.Itoa(i))
-		time.Sleep(1 * time.Second)
-		cancel()
 	}
 }

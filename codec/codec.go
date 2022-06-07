@@ -3,6 +3,9 @@ package codec
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"github.com/bee-org/bee/message"
+	"github.com/pkg/errors"
 )
 
 type Codec interface {
@@ -11,103 +14,64 @@ type Codec interface {
 }
 
 type Encode interface {
-	Encode(header *Header, value interface{}) (data []byte, err error)
-	EncodeBody(header *Header, body []byte) (data []byte, err error)
+	Encode(m message.Message) (data []byte, err error)
 }
 type Decode interface {
-	Decode(data []byte) (header Header, body []byte)
+	Decode(data []byte) (m message.Message, err error)
 }
 
-type Header struct {
-	Name  string
-	Retry uint8
-}
+var (
+	NameIsNullError = errors.New("name is ''")
+	DataDecodeError = errors.New("data decode error")
+)
 
-//LNB 长度域（Length）+ 名域(Name) + 值域（Value）
-type LNB struct {
-}
-
-func (c *LNB) Encode(header *Header, value interface{}) (data []byte, err error) {
-	var body []byte
-	//switch body.(type) {
-	//case uint, uint8, uint16, uint32, uint64, int, int8, int16, int32, int64, string, bool, complex64,complex128:
-	//	bodyBytes =
-	//}
-	if value != nil {
-		body, err = json.Marshal(value)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return c.EncodeBody(header, body)
-}
-
-func (c *LNB) EncodeBody(header *Header, body []byte) (data []byte, err error) {
-	buf := bytes.NewBuffer(make([]byte, 0, len(body)+len(header.Name)+1))
-	//if err := binary.Write(buf, binary.BigEndian, uint8(len(name))); err != nil {
-	//	return nil, err
-	//}
-	buf.WriteByte(byte(uint8(len(header.Name))))
-	buf.WriteString(header.Name)
-	if len(body) > 0 {
-		buf.Write(body)
-	}
-	return buf.Bytes(), nil
-}
-
-func (c *LNB) Decode(data []byte) (header Header, body []byte) {
-	length := int(uint8(data[0]))
-	if len(data) < length+1 {
-		return
-	}
-	header.Name = string(data[1 : length+1])
-	body = data[length+1:]
-	return
-}
-
-//VND 版本域（Version）+ 名域(Name) + 数据域（Data）
+//VNDCodec 版本域（Version）+ 名域(Name) + 数据域（Data）
 // ┌───────┬───────┬───────┬────────────────┐
 // │version│ retry │ length│     name       │ header
 // ├───────┴───────┴───────┴────────────────┤
 // │                  body                  │
 // └────────────────────────────────────────┘
-type VND struct {
+type VNDCodec struct {
 }
 
-func (c *VND) Encode(header *Header, value interface{}) (data []byte, err error) {
-	var body []byte
-	if value != nil {
-		body, err = json.Marshal(value)
-	}
-	if err != nil {
+func (c *VNDCodec) Encode(m message.Message) (data []byte, err error) {
+	name := m.GetName()
+	if len(name) == 0 {
+		err = NameIsNullError
 		return
 	}
-	return c.EncodeBody(header, body)
-}
+	var body []byte
+	if value := m.GetValue(); value != nil {
+		body, err = json.Marshal(value)
+		if err != nil {
+			return
+		}
+		m.SetBody(body)
+	} else {
+		body = m.GetBody()
+	}
 
-func (c *VND) EncodeBody(header *Header, body []byte) (data []byte, err error) {
-	buf := bytes.NewBuffer(make([]byte, 0, len(body)+len(header.Name)+3))
-	//if err := binary.Write(buf, binary.BigEndian, uint8(len(name))); err != nil {
-	//	return nil, err
-	//}
-	buf.WriteByte(uint8(0))                // version
-	buf.WriteByte(uint8(header.Retry))     // retry counter
-	buf.WriteByte(uint8(len(header.Name))) // name length
-	buf.WriteString(header.Name)
+	buf := bytes.NewBuffer(make([]byte, 0, len(body)+len(name)+3))
+	buf.WriteByte(m.GetVersion())    // version
+	buf.WriteByte(m.GetRetryCount()) // retry counter
+	buf.WriteByte(uint8(len(name)))  // name length
+	buf.WriteString(name)            // name
 	if len(body) > 0 {
 		buf.Write(body)
 	}
 	return buf.Bytes(), nil
 }
 
-func (c *VND) Decode(data []byte) (header Header, body []byte) {
-	//version := data[0]
-	header.Retry = data[1]
-	length := int(data[2])
-	if len(data) < length+3 {
+func (c *VNDCodec) Decode(data []byte) (m message.Message, err error) {
+	if len(data) < 4 {
+		err = errors.Wrap(DataDecodeError, fmt.Sprintf("%v", data))
 		return
 	}
-	header.Name = string(data[3 : length+3])
-	body = data[length+3:]
+	//version := data[0]
+	retryCount := data[1]
+	length := int(data[2])
+	name := string(data[3 : length+3])
+	body := data[length+3:]
+	m = message.NewMsg(name, nil).SetRetryCount(retryCount).SetBody(body)
 	return
 }

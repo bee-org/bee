@@ -13,6 +13,9 @@ supported middleware
 - [x] rocketmq
 - [x] rabbitmq
 
+# Install
+`go get -u github.com/bee-org/bee`
+
 # Quick start
 
 Redis example:

@@ -134,8 +134,11 @@ func (b *Broker) watch(ctx context.Context) {
 				close(b.buffer)
 				return
 			default:
-				_ = b.getOneByDelayQueue(ctx)
-				time.Sleep(100 * time.Millisecond)
+				// Loop to get the delay message until it is empty, wait 100 milliseconds
+				err := b.getOneByDelayQueue(ctx)
+				if err == redis.Nil {
+					time.Sleep(100 * time.Millisecond)
+				}
 			}
 		}
 	}()
@@ -239,7 +242,7 @@ func (b *Broker) getOneByDelayQueue(ctx context.Context) (err error) {
 		return err
 	}
 	err = b.c.Watch(ctx, watchFunc, key)
-	if len(result) > 0 {
+	if err == nil && len(result) > 0 {
 		b.buffer <- result
 	}
 	return

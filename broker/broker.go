@@ -20,7 +20,7 @@ type IBroker interface {
 	// Send Produce the message to execute the handler function asynchronously
 	Send(ctx context.Context, name string, value interface{}) error
 	// SendDelay Produce the delay message to execute the handler function asynchronously
-	SendDelay(ctx context.Context, name string, body interface{}, delay time.Duration) error
+	SendDelay(ctx context.Context, name string, value interface{}, delay time.Duration) error
 }
 
 type Broker struct {

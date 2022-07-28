@@ -6,7 +6,6 @@ import (
 	"github.com/bee-org/bee/example"
 	"github.com/bee-org/bee/log"
 	"os"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -75,6 +74,7 @@ func TestPulSarBroker_SendCounter(t *testing.T) {
 	type args struct {
 		ctx   context.Context
 		batch int
+		delay time.Duration
 	}
 	tests := []struct {
 		name       string
@@ -82,24 +82,26 @@ func TestPulSarBroker_SendCounter(t *testing.T) {
 		wantErr    bool
 		wantResult int64
 	}{
-		{args: args{ctx: ctx, batch: 1}, wantResult: 1},
-		{args: args{ctx: ctx, batch: 10}, wantResult: 11},
-		{args: args{ctx: ctx, batch: 100}, wantResult: 111},
+		{args: args{ctx: ctx, batch: 1, delay: 0}, wantResult: 1},
+		{args: args{ctx: ctx, batch: 10, delay: 1 * time.Millisecond}, wantResult: 11},
+		{args: args{ctx: ctx, batch: 100, delay: 10 * time.Millisecond}, wantResult: 111},
+		{args: args{ctx: ctx, batch: 200, delay: 100 * time.Millisecond}, wantResult: 311},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wg := sync.WaitGroup{}
 			for i := 0; i < tt.args.batch; i++ {
+				v := i
 				wg.Add(1)
 				go func() {
-					if err := b.Send(tt.args.ctx, "counter", nil); (err != nil) != tt.wantErr {
+					if err := b.SendDelay(tt.args.ctx, "counter", v, tt.args.delay); (err != nil) != tt.wantErr {
 						t.Errorf("SendCounter() error = %v, wantErr %v", err, tt.wantErr)
 					}
 					wg.Done()
 				}()
 			}
 			wg.Wait()
-			time.Sleep(time.Duration(tt.args.batch) * 100 * time.Millisecond)
+			time.Sleep(time.Duration(tt.args.batch)*100*time.Millisecond + tt.args.delay)
 			if example.CounterResult != tt.wantResult {
 				t.Errorf("SendCounter() result = %v, want %v", example.CounterResult, tt.wantResult)
 			}
@@ -199,11 +201,11 @@ func TestBroker_Close(t *testing.T) {
 	}
 }
 
-func TestBroker_ReConnect(t *testing.T) {
-	for i := 0; i < 100; i++ {
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		_ = b.Send(ctx, "print", strconv.Itoa(i))
-		time.Sleep(1 * time.Second)
-		cancel()
-	}
-}
+//func TestBroker_ReConnect(t *testing.T) {
+//	for i := 0; i < 100; i++ {
+//		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+//		_ = b.Send(ctx, "print", strconv.Itoa(i))
+//		time.Sleep(1 * time.Second)
+//		cancel()
+//	}
+//}

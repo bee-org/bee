@@ -211,13 +211,13 @@ func (b *Broker) watch() {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					defer func() { seat <- struct{}{} }()
 					msg := data.Message
 					if err := b.handler(b.Ctx(), msg.Payload()); err != nil {
 						b.consumer.NackID(msg.ID())
 						return
 					}
 					b.consumer.AckID(msg.ID())
-					seat <- struct{}{}
 				}()
 			}
 		}

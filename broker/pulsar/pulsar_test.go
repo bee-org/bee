@@ -32,6 +32,7 @@ func TestMain(m *testing.M) {
 		},
 		NackRedeliveryDelay: 1 * time.Second,
 		Logger:              log.NewDefaultLogger(),
+		Concurrency:         3,
 	})
 	if err != nil {
 		panic(err)
@@ -199,4 +200,14 @@ func TestBroker_ReConnect(t *testing.T) {
 		time.Sleep(1 * time.Second)
 		cancel()
 	}
+}
+
+func TestBroker_ErrorBlockSeat(t *testing.T) {
+	_ = b.Send(ctx, "error", "a")
+	_ = b.Send(ctx, "error", "b")
+	_ = b.Send(ctx, "error", "c")
+	for i := 0; i < 10; i++ {
+		_ = b.Send(ctx, "print", strconv.Itoa(i))
+	}
+	time.Sleep(10 * time.Second)
 }

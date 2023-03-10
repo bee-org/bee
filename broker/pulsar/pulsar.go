@@ -2,6 +2,7 @@ package pulsar
 
 import (
 	"context"
+	"fmt"
 	"github.com/apache/pulsar-client-go/pulsar"
 	plog "github.com/apache/pulsar-client-go/pulsar/log"
 	"github.com/bee-org/bee"
@@ -213,7 +214,7 @@ func (b *Broker) watch() {
 					defer wg.Done()
 					defer func() { seat <- struct{}{} }()
 					msg := data.Message
-					if err := b.handler(b.Ctx(), msg.Payload()); err != nil {
+					if err := b.handler(b.Ctx(), msg); err != nil {
 						b.consumer.NackID(msg.ID())
 						return
 					}
@@ -224,12 +225,14 @@ func (b *Broker) watch() {
 	}()
 }
 
-func (b *Broker) handler(ctx context.Context, data []byte) error {
-	msg, err := b.config.Codec.Decode(data)
+func (b *Broker) handler(ctx context.Context, message pulsar.Message) error {
+	msg, err := b.config.Codec.Decode(message.Payload())
 	if err != nil {
 		b.config.Logger.Errorf("process unknown data: %s", err)
 		return err
 	}
+	msgId := message.ID()
+	msg.SetMsgId(fmt.Sprintf("%d:%d:%d", msgId.LedgerID(), msgId.EntryID(), msgId.PartitionIdx()))
 	handler, ok := b.Router(msg.GetName())
 	if !ok {
 		b.config.Logger.Warningf("process unknown name: %s", msg.GetName())

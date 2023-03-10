@@ -172,7 +172,7 @@ func (b *Broker) watch(ctx context.Context) {
 				<-seat
 				wg.Add(1)
 				go func() {
-					_ = b.process(ctx, data.Body)
+					_ = b.process(ctx, data)
 					_ = data.Ack(false)
 					wg.Done()
 					seat <- struct{}{}
@@ -182,12 +182,13 @@ func (b *Broker) watch(ctx context.Context) {
 	}()
 }
 
-func (b *Broker) process(ctx context.Context, data []byte) error {
-	msg, err := b.config.Codec.Decode(data)
+func (b *Broker) process(ctx context.Context, message amqp.Delivery) error {
+	msg, err := b.config.Codec.Decode(message.Body)
 	if err != nil {
 		b.config.Logger.Errorf("process unknown data: %s", err)
 		return err
 	}
+	msg.SetMsgId(message.MessageId)
 	handler, ok := b.Router(msg.GetName())
 	if !ok {
 		b.config.Logger.Warningf("process unknown name: %s", msg.GetName())

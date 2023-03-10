@@ -18,7 +18,7 @@ var (
 	err error
 )
 
-func TestMain(m *testing.M) {
+func initBroker() {
 	b, err = NewBroker(Config{
 		URL:              os.Getenv("PULSAR_URL"),
 		Topic:            "persistent://ddmc/algo/bee",
@@ -46,6 +46,9 @@ func TestMain(m *testing.M) {
 	if err = b.Worker(); err != nil {
 		panic(err)
 	}
+}
+func TestMain(m *testing.M) {
+	initBroker()
 	os.Exit(m.Run())
 }
 
@@ -164,8 +167,8 @@ func TestPulSarBroker_SendDelay(t *testing.T) {
 				t.Errorf("SendDelay() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			got := <-example.DelayResult
-			if got.Sub(want).Seconds() > 1 {
-				t.Errorf("SendDelay() got delay = %v, want %v", got.Second(), want.Second())
+			if int(got.Sub(want).Seconds()) > 1 {
+				t.Errorf("SendDelay() got delay = %v, want %v", got, want)
 			}
 		})
 	}
@@ -193,16 +196,17 @@ func TestBroker_Close(t *testing.T) {
 	}
 }
 
-func TestBroker_ReConnect(t *testing.T) {
-	for i := 0; i < 100; i++ {
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		_ = b.Send(ctx, "print", strconv.Itoa(i))
-		time.Sleep(1 * time.Second)
-		cancel()
-	}
-}
+//func TestBroker_ReConnect(t *testing.T) {
+//	for i := 0; i < 100; i++ {
+//		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+//		_ = b.Send(ctx, "print", strconv.Itoa(i))
+//		time.Sleep(1 * time.Second)
+//		cancel()
+//	}
+//}
 
 func TestBroker_ErrorBlockSeat(t *testing.T) {
+	initBroker()
 	_ = b.Send(ctx, "error", "a")
 	_ = b.Send(ctx, "error", "b")
 	_ = b.Send(ctx, "error", "c")

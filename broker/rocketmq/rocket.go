@@ -128,12 +128,13 @@ func (b *Broker) Close() error {
 	return b.consumer.Shutdown()
 }
 
-func (b *Broker) handler(ctx context.Context, data []byte) error {
-	msg, err := b.config.Codec.Decode(data)
+func (b *Broker) handler(ctx context.Context, message *primitive.MessageExt) error {
+	msg, err := b.config.Codec.Decode(message.Body)
 	if err != nil {
 		b.config.Logger.Errorf("process unknown data: %s", err)
 		return err
 	}
+	msg.SetMsgId(message.MsgId)
 	handler, ok := b.Router(msg.GetName())
 	if !ok {
 		b.config.Logger.Warningf("process unknown name: %s", msg.GetName())
@@ -148,7 +149,7 @@ func (b *Broker) handler(ctx context.Context, data []byte) error {
 func newConsumerHandler(b *Broker) func(context.Context, ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 	return func(ctx context.Context, mes ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 		for _, me := range mes {
-			if err := b.handler(b.Ctx(), me.Body); err != nil {
+			if err := b.handler(b.Ctx(), me); err != nil {
 				return consumer.ConsumeRetryLater, err
 			}
 		}

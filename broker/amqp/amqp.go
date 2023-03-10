@@ -172,8 +172,11 @@ func (b *Broker) watch(ctx context.Context) {
 				<-seat
 				wg.Add(1)
 				go func() {
-					_ = b.process(ctx, data)
-					_ = data.Ack(false)
+					if err := b.process(ctx, data); err != nil {
+						_ = data.Nack(false, true)
+					} else {
+						_ = data.Ack(false)
+					}
 					wg.Done()
 					seat <- struct{}{}
 				}()

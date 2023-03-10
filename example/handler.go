@@ -12,7 +12,7 @@ var PrintResult = map[string]struct{}{}
 func PrintHandler(c *bee.Context) error {
 	var result string
 	err := c.Parse(&result)
-	fmt.Println("printHandler", result, err)
+	fmt.Println("printHandler", c.Message().GetMsgId(), result, err)
 	PrintResult[result] = struct{}{}
 	return nil
 }
